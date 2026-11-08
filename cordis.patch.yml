@@ -1,0 +1,8 @@
+- insert:
+    - id: english-reader
+      name: english-reader
+      config:
+        dataDir: ''
+        sentenceConcurrency: 2
+        retryLimit: 2
+        wordsPerArticle: 15

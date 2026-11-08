@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "title": "English Reader",
+    "description": "Read, analyse and collect English articles: discovery and import, sentence-level AI breakdown, dual-column intensive reading, and a personal vocabulary knowledge base."
+  },
+  "panel": "English Reader",
+  "nav": {
+    "home": "Home",
+    "discover": "Discover",
+    "articles": "My Articles",
+    "words": "Vocabulary",
+    "phrases": "Phrases",
+    "collocations": "Collocations",
+    "sentences": "Sentences",
+    "review": "Review",
+    "settings": "Settings"
+  }
+}

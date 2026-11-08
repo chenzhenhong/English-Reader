@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "title": "English Reader",
+    "description": "阅读、解析与积累英文文章：自动发现与导入、逐句 AI 精读、双栏精读与个人词汇知识库。"
+  },
+  "panel": "English Reader",
+  "nav": {
+    "home": "首页",
+    "discover": "采集文章",
+    "articles": "我的文章",
+    "words": "单词库",
+    "phrases": "短语库",
+    "collocations": "搭配库",
+    "sentences": "句子库",
+    "review": "复习中心",
+    "settings": "设置"
+  }
+}

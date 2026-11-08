@@ -1,0 +1,12 @@
+# Local data and scratch files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+x.sqlite
+
+# Dependencies
+node_modules/
+
+# Editor and OS noise
+.DS_Store
+*.swp

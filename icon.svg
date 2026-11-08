@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="English Reader">
+  <defs>
+    <linearGradient id="cover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B7BF7"/>
+      <stop offset="1" stop-color="#5B7CFA"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF1FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#F3F0FF"/>
+  <path d="M14 18c0-2 1.6-3.2 3.6-2.6L32 18v30l-14.4-3.2C15.6 44.4 14 43 14 41V18Z" fill="url(#page)" stroke="#C9BFFF" stroke-width="1.2"/>
+  <path d="M50 18c0-2-1.6-3.2-3.6-2.6L32 18v30l14.4-3.2c2-.6 3.6-1.4 3.6-3.4V18Z" fill="url(#page)" stroke="#C9BFFF" stroke-width="1.2"/>
+  <path d="M32 18v30" stroke="#C9BFFF" stroke-width="1.4"/>
+  <rect x="18" y="24" width="10" height="2.2" rx="1.1" fill="#B9AEF5"/>
+  <rect x="18" y="30" width="8" height="2.2" rx="1.1" fill="#D3CBFA"/>
+  <rect x="36" y="26" width="10" height="2.2" rx="1.1" fill="url(#cover)"/>
+  <rect x="36" y="32" width="7" height="2.2" rx="1.1" fill="#D3CBFA"/>
+  <circle cx="45" cy="43" r="9" fill="url(#cover)"/>
+  <path d="M41 43l2.8 2.8 5-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

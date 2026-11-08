@@ -1,0 +1,441 @@
+/** Article detail: the reading surface (continuous mode + dual-column mode). */
+
+/**
+ * Stage order, label key and the one-line subject each stage produces.
+ * The hint exists because "切分" and "逐句" both show a sentence count: without
+ * it, 15/15 next to 15/15 reads like the same measurement twice.
+ */
+const STAGES_ORDER = [
+  { id: 'OVERVIEW', labelKey: 'stage.OVERVIEW', hintKey: 'stageHint.OVERVIEW' },
+  { id: 'DIFFICULTY', labelKey: 'stage.DIFFICULTY', hintKey: 'stageHint.DIFFICULTY' },
+  { id: 'VOCABULARY', labelKey: 'stage.VOCABULARY', hintKey: 'stageHint.VOCABULARY' },
+  { id: 'PHRASES', labelKey: 'stage.PHRASES', hintKey: 'stageHint.PHRASES' },
+  { id: 'COLLOCATIONS', labelKey: 'stage.COLLOCATIONS', hintKey: 'stageHint.COLLOCATIONS' },
+  { id: 'SEGMENTATION', labelKey: 'stage.SEGMENTATION', hintKey: 'stageHint.SEGMENTATION' },
+  { id: 'SENTENCE_ANALYSIS', labelKey: 'stage.SENTENCE_ANALYSIS', hintKey: 'stageHint.SENTENCE_ANALYSIS' },
+  { id: 'REVIEW', labelKey: 'stage.REVIEW', hintKey: 'stageHint.REVIEW' },
+];
+
+/**
+ * Per-stage counter text.
+ *
+ * A count must describe work actually finished, so each stage reads its own
+ * progress payload:
+ * - SEGMENTATION reports how many sentences were cut.
+ * - SENTENCE_ANALYSIS reports analysed/total, never the success-only count.
+ * Other stages have no countable unit and show none.
+ * @returns {string} suffix such as ` 4/15`, or an empty string.
+ */
+function stageCounter(stageId, progress) {
+  if (!progress) return '';
+  if (stageId === 'SEGMENTATION') {
+    // A single, finished action: report the sentence total, not a ratio that
+    // looks like progress.
+    const total = Number(progress.sentences);
+    return Number.isFinite(total) && total > 0 ? ` ${total}` : '';
+  }
+  if (stageId === 'SENTENCE_ANALYSIS') {
+    const total = Number(progress.sentences);
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const analysed = Number.isFinite(progress.analysed)
+      ? progress.analysed
+      : (Number(progress.done) || 0) + (Number(progress.needsReview) || 0);
+    return ` ${analysed}/${total}`;
+  }
+  return '';
+}
+
+/** Stage progress strip with a retry control on failed stages. */
+function AnalysisProgress({ t, tasks, onRetry, pending }) {
+  const cells = STAGES_ORDER.map((stage) => {
+    const task = tasks.find((item) => item.stage === stage.id);
+    const status = task?.status ?? 'PENDING';
+    const counter = stageCounter(stage.id, task?.progress);
+    const review = stage.id === 'SENTENCE_ANALYSIS' && (task?.progress?.needsReview ?? 0) > 0
+      ? ` · ${t('reader.needsReviewCount')} ${task.progress.needsReview}`
+      : '';
+    return h('div', { key: stage.id, className: 'er-stage', 'data-status': status },
+      h('div', { className: 'er-stage-name' }, t(stage.labelKey, { fallback: stage.id })),
+      h('div', { className: 'er-stage-hint' }, t(stage.hintKey, { fallback: '' })),
+      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`),
+      status === 'FAILED'
+        ? h(Button, { size: 'sm', variant: 'ghost', disabled: pending, onClick: () => onRetry(stage.id) }, t('common.retry'))
+        : null);
+  });
+  return h('div', { className: 'er-stage-list' }, cells);
+}
+
+/**
+ * Reader progress band.
+ *
+ * Collapses to a single progress line unless something needs attention (a failed
+ * stage, a review flag, or a run in flight). The stage grid is tall; when every
+ * stage succeeded it only repeats "done" eight times and steals height from the
+ * article. `open` lets the learner override either way.
+ * @param {object} props
+ * @param {boolean|null} props.open null = follow the automatic rule.
+ */
+function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onToggle }) {
+  const needsAttention = running || tasks.some((task) => (
+    task.status === 'FAILED' || task.status === 'NEEDS_REVIEW'
+  ));
+  const expanded = open === null ? needsAttention : open;
+
+  const attentionCount = tasks.filter((task) => task.status === 'FAILED' || task.status === 'NEEDS_REVIEW').length;
+  const label = task => STATUS_LABELS[task.status] ?? task.status;
+
+  const bar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 } },
+    h('span', { className: 'er-card-sub', style: { flex: 'none' } }, t('reader.progress')),
+    h('div', { style: { flex: 1, minWidth: 80 } }, h(Progress, { ratio })),
+    h('span', { className: 'er-card-sub', style: { flex: 'none' } }, `${Math.round(ratio * 100)}%`),
+    h('span', { className: 'er-card-sub', style: { flex: 'none' } }, position),
+    needsAttention && !expanded
+      ? h(Badge, { tone: 'pink' }, `${attentionCount} ${t('reader.needsAttention')}`)
+      : null,
+    // `onToggle` receives the *next* state. Passing the current one made the
+    // parent store the value it already had, so the button looked dead.
+    h(Button, {
+      size: 'sm',
+      variant: 'ghost',
+      icon: h(Icons.chevron, { dir: expanded ? 'up' : 'down' }),
+      iconOnly: true,
+      ariaExpanded: expanded,
+      ariaLabel: expanded ? t('reader.collapseBand') : t('reader.expandBand'),
+      title: expanded ? t('reader.collapseBand') : t('reader.expandBand'),
+      onClick: () => onToggle(!expanded),
+    }));
+
+  return h(Cell, {
+    span: 12,
+    size: 'compact',
+    // Collapsed: no bottom padding, so the reader starts right beneath the bar.
+    className: expanded ? 'er-reader-band' : 'er-reader-band er-reader-band--collapsed',
+  },
+  h('div', { style: { display: 'flex', flexDirection: 'column', gap: expanded ? 10 : 0 } },
+    bar,
+    expanded
+      ? h(React.Fragment, null,
+        h(AnalysisProgress, { t, tasks, onRetry, pending }),
+        running ? h(Alert, { tone: 'warn' }, t('reader.analysisRunning')) : null)
+      : null));
+}
+
+/** Aggregate view of failed sentences with their codes and one-click jumps. */
+function FailureSummary({ t, sentences, tasks, onJump, onRetryAll }) {
+  const failed = sentences.filter((item) => item.analysisStatus === 'failed');
+  if (failed.length === 0) return null;
+  const codes = new Map();
+  for (const item of failed) {
+    const code = item.error?.code ?? 'LLM_UNAVAILABLE';
+    codes.set(code, (codes.get(code) ?? 0) + 1);
+  }
+  const stage = tasks.find((task) => task.stage === 'SENTENCE_ANALYSIS');
+  return h(Cell, { span: 12, eyebrow: `${t('reader.failureSummary')} · ${failed.length}`, icon: h(Icons.warning, null) },
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+        [...codes.entries()].map(([code, count]) => h('span', { key: code, style: { display: 'flex', gap: 4, alignItems: 'center' } },
+          h(Badge, { tone: 'pink' }, `${code} × ${count}`),
+          h('span', { className: 'er-meaning-ctx' }, t(`error.${code}`, { fallback: t('error.unknown') }))))) ,
+      stage?.errorMessage ? h('div', { className: 'er-card-sub' }, stage.errorMessage) : null,
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+        failed.map((item) => h('div', {
+          key: item.sentenceIndex,
+          style: { display: 'flex', alignItems: 'center', gap: 8 },
+        },
+        h('span', { className: 'er-badge plain' }, `#${item.sentenceIndex + 1}`),
+        h('span', {
+          className: 'er-kv-value',
+          style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+        }, item.text),
+        h('span', { className: 'er-meaning-ctx' }, item.error?.message ?? ''),
+        h(Button, { size: 'sm', variant: 'ghost', onClick: () => onJump(item.sentenceIndex) }, t('reader.jumpToSentence')))),
+        )));
+}
+
+/** Note list for the article, above the reader. */
+function NoteList({ t, notes }) {
+  if (notes.length === 0) return null;
+  return h(Cell, { span: 12, eyebrow: `${t('reader.notes')} · ${notes.length}`, icon: h(Icons.note, null) },
+    notes.map((note) => h('div', { key: note.id, className: 'er-struct-item', style: { marginBottom: 8 } },
+      h('div', { className: 'er-struct-text' }, note.body),
+      h('div', { className: 'er-meaning-ctx' },
+        note.sentenceIndex !== null && note.sentenceIndex !== undefined
+          ? `${t('reader.sentence')} #${note.sentenceIndex + 1}`
+          : t('reader.articleNote'),
+        ' · ', relativeDate(note.createdAt)))));
+}
+
+/** The reading page. */
+function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
+  const detail = useLoad(() => call('getArticle', { articleId }), [articleId]);
+  const [mode, setMode] = React.useState('split');
+  const [active, setActive] = React.useState(-1);
+  const [drawerWord, setDrawerWord] = React.useState(null);
+  const [insightTab, setInsightTab] = React.useState('guide');
+  // The stage strip only earns its space when something needs attention; a fully
+  // successful analysis collapses to a single progress line, and the reader gets
+  // the height back. The learner can always open it to inspect the detail.
+  const [bandOpen, setBandOpen] = React.useState(null);
+  const [noteDraft, setNoteDraft] = React.useState('');
+  const action = useAction();
+  const words = React.useMemo(() => (detail.data ? wordIndex(detail.data) : new Map()), [detail.data]);
+  const sentences = detail.data?.sentences ?? [];
+  const activeSentence = sentences.find((sentence) => sentence.sentenceIndex === active) ?? null;
+
+  React.useEffect(() => {
+    if (detail.data && active < 0) setActive(detail.data.progress?.sentenceIndex ?? 0);
+  }, [detail.data, active]);
+
+  // Reading time is measured, not estimated: accumulate wall-clock time only
+  // while this pane is visible, and attribute it to the article on the next save.
+  const readMs = React.useRef(0);
+  const visibleSince = React.useRef(null);
+  React.useEffect(() => {
+    const markVisible = () => {
+      if (visibleSince.current === null) visibleSince.current = Date.now();
+    };
+    // Without a DOM there is no visibility signal; count elapsed time only.
+    if (typeof document === 'undefined') return undefined;
+    const flush = () => {
+      if (visibleSince.current !== null) {
+        readMs.current += Date.now() - visibleSince.current;
+        visibleSince.current = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') markVisible();
+      else flush();
+    };
+    markVisible();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
+  }, [articleId]);
+
+  // Reading position is saved once the selection settles, so dragging through
+  // sentences does not write a row per click. The save carries the seconds read
+  // since the previous save, so the study log reflects real attention.
+  React.useEffect(() => {
+    if (detail.data === undefined || active < 0) return undefined;
+    const total = Math.max(1, sentences.length - 1);
+    const ratio = Math.min(1, Math.max(0, active) / total);
+    const timer = setTimeout(() => {
+      // Fold the currently-visible span in before reporting.
+      if (visibleSince.current !== null) {
+        readMs.current += Date.now() - visibleSince.current;
+        visibleSince.current = Date.now();
+      }
+      const seconds = Math.round(readMs.current / 1000);
+      readMs.current = 0;
+      call('saveProgress', { articleId, sentenceIndex: active, ratio, seconds }).catch(() => undefined);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [active, articleId, detail.data, sentences.length]);
+
+  const updateWord = async (wordId, patch) => {
+    const value = await action.run(() => call('updateKnowledge', { entityType: 'word', entityId: wordId, ...patch }));
+    if (value) detail.reload();
+  };
+  /**
+   * Add or remove one entity from the knowledge library.
+   * Nothing is stored until this runs, which is what keeps parsing from
+   * silently filling the library.
+   */
+  const setInLibrary = async (kind, entityId, next) => {
+    const value = await action.run(() => call('updateKnowledge', {
+      entityType: kind, entityId, favorite: next,
+    }));
+    if (value) {
+      notify(next ? t('reader.addedToLibrary') : t('reader.removedFromLibrary'), 'ok');
+      detail.reload();
+    }
+  };
+  const startAnalysis = async () => {
+    const started = await action.run(() => call('startAnalysis', { articleId }));
+    if (started) {
+      notify(t('articles.analysisStarted'), 'ok');
+      detail.reload();
+    }
+  };
+  const retry = async (stage) => {
+    const state = await action.run(() => call('retryStage', { articleId, stage }));
+    if (state) {
+      notify(t('articles.retryDone'), 'ok');
+      detail.reload();
+    }
+  };
+  const addNote = async () => {
+    if (noteDraft.trim().length === 0) return;
+    const saved = await action.run(() => call('saveNote', {
+      articleId, body: noteDraft, sentenceIndex: active >= 0 ? active : undefined,
+    }));
+    if (saved) {
+      setNoteDraft('');
+      detail.reload();
+    }
+  };
+  const removeArticle = async () => {
+    const removed = await action.run(() => call('deleteArticle', { articleId }));
+    if (removed) onBack();
+  };
+
+  if (detail.status === 'loading' && !detail.data) {
+    return h('div', { className: 'er-page' },
+      h(Skeleton, { height: 44, radius: 14 }), h(Skeleton, { height: 320, radius: 20 }));
+  }
+  if (detail.status === 'error') {
+    return h('div', { className: 'er-page' },
+      h(Alert, null, detail.error.message),
+      h('div', null, h(Button, { onClick: detail.reload }, t('common.retry'))));
+  }
+
+  const data = detail.data;
+  const article = data.article;
+  const total = Math.max(1, sentences.length);
+  const ratio = sentences.length > 1 ? Math.min(1, Math.max(0, active) / (sentences.length - 1)) : 0;
+  const running = data.analysis?.status === 'RUNNING' || data.tasks.some((task) => task.status === 'RUNNING');
+
+  const jumpToSentence = (index) => {
+    setActive(index);
+    setMode('split');
+  };
+
+  const pane = SentencePane({
+    t,
+    sentence: activeSentence ? { ...activeSentence, articleId } : null,
+    sentenceText: activeSentence?.text ?? '',
+    onAddToLibrary: (sentence, next) => setInLibrary('sentence', sentence.id, next),
+  });
+  const sentencePanel = h('section', { className: 'er-cell er-side-card' },
+    h('div', { className: 'er-side-head' },
+      h('div', { className: 'er-side-title' }, h(Icons.target, null), h('span', null, t('reader.sentenceTab'))),
+      h('div', { style: { display: 'flex', gap: 4 } },
+        h(Button, {
+          size: 'sm', variant: 'ghost', disabled: active <= 0,
+          onClick: () => setActive(Math.max(0, active - 1)),
+        }, '‹'),
+        h(Button, {
+          size: 'sm', variant: 'ghost', disabled: active >= sentences.length - 1,
+          onClick: () => setActive(Math.min(sentences.length - 1, active + 1)),
+        }, '›'))),
+    // Header (title + sentence + add button) is part of the fixed frame; only
+    // the analysis below it scrolls.
+    pane.head,
+    h('div', { className: 'er-side-scroll', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+      pane.body),
+    activeSentence
+      ? h('div', { style: { borderTop: '1px dashed var(--er-line)', paddingTop: 12 } },
+        h('div', { className: 'er-kv-label', style: { marginBottom: 6 } }, t('reader.noteForSentence')),
+        h('textarea', {
+          className: 'er-textarea', style: { minHeight: 74, fontSize: 12 },
+          value: noteDraft, placeholder: t('reader.notePlaceholder'),
+          onChange: (event) => setNoteDraft(event.target.value),
+        }),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 6 } },
+          h(Button, {
+            size: 'sm', disabled: action.pending || noteDraft.trim().length === 0, onClick: addNote,
+          }, t('reader.saveNote'))))
+      : null);
+
+  const insightPanel = h(ArticleInsights, {
+    onAddToLibrary: (kind, id, next) => setInLibrary(kind, id, next),
+    t, detail: data, tab: insightTab, onTab: setInsightTab, onWord: setDrawerWord,
+    onAnalysis: startAnalysis,
+  });
+
+  return h('div', { className: 'er-page er-page--fill' },
+    h('div', { className: 'er-topbar' },
+      h(Button, { variant: 'ghost', icon: h(Icons.arrowLeft, null), onClick: onBack }, t('common.back')),
+      h('div', { className: 'er-crumb' },
+        h('span', null, 'English Reader'), h('span', { className: 'er-crumb-dot' }), h('span', null, article.title)),
+      h('div', { className: 'er-topbar-spacer' }),
+      h(Tabs, {
+        items: [
+          { id: 'split', label: t('reader.modeSplit') },
+          { id: 'continuous', label: t('reader.modeContinuous') },
+        ],
+        value: mode, onChange: setMode,
+      }),
+      h(Button, {
+        variant: 'primary', icon: h(Icons.sparkle, null), disabled: action.pending || running, onClick: startAnalysis,
+      }, running ? t('reader.analyzing') : data.analysis ? t('common.reanalyze') : t('articles.analyze'))),
+
+    h(Band, {
+      t,
+      ratio,
+      position: `${Math.max(1, active + 1)} / ${total}`,
+      tasks: data.tasks,
+      running,
+      onRetry: retry,
+      pending: action.pending,
+      open: bandOpen,
+      onToggle: setBandOpen,
+    }),
+
+    h('div', { className: 'er-reader er-reader--fill' },
+      h('section', { className: 'er-cell er-article-card' },
+        h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 12 } },
+          h(Thumb, { id: article.id, style: { width: 76, height: 56, flex: 'none' } }),
+          h('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 } },
+            h('h2', { className: 'er-article-title' }, article.title),
+            h('div', { className: 'er-article-meta' },
+              h(Badge, { tone: cefrTone(article.cefrLevel) }, `${article.cefrLevel ?? '—'} · AI 估计`),
+              h(Badge, { tone: 'soft' }, article.sourceName ?? 'Manual'),
+              h('span', null, `${data.wordCount} ${t('common.words')}`),
+              h('span', { className: 'er-crumb-dot' }),
+              h('span', null, `${article.readingMinutes} ${t('common.minutes')}`),
+              article.publishedAt ? h('span', null, shortDate(article.publishedAt)) : null,
+              article.sourceUrl
+                ? h('a', {
+                  className: 'er-source-link',
+                  href: article.sourceUrl,
+                  target: '_blank',
+                  rel: 'noreferrer noopener',
+                  title: article.sourceUrl,
+                }, h(Icons.link, null), h('span', null, t('reader.openSource')))
+                : null)),
+          h(Button, {
+            variant: 'ghost', iconOnly: true, children: t('common.delete'), onClick: removeArticle,
+          }, h(Icons.trash, null))),
+        h('div', { className: 'er-pane-scroll' },
+          sentences.length === 0
+            ? h(Empty, { icon: h(Icons.bookOpen, null), title: t('reader.emptyBody'), description: t('reader.emptyBodyHint') })
+            : h(ArticleBody, {
+              detail: data, words, activeIndex: active, onSelect: setActive, onWord: setDrawerWord,
+            }))),
+      mode === 'split'
+        ? h('aside', { className: 'er-side' },
+          // Both children render their own cell, or nothing at all.
+          h(FailureSummary, { t, sentences, tasks: data.tasks, onJump: jumpToSentence, onRetryAll: () => retry('SENTENCE_ANALYSIS') }),
+          sentencePanel,
+          h(NoteList, { t, notes: data.notes }))
+        : h('aside', { className: 'er-side' },
+          h(FailureSummary, { t, sentences, tasks: data.tasks, onJump: jumpToSentence, onRetryAll: () => retry('SENTENCE_ANALYSIS') }),
+          insightPanel,
+          h(NoteList, { t, notes: data.notes }))),
+
+
+    drawerWord
+      ? h(Dialog, {
+        title: t('reader.wordDetail'), onClose: () => setDrawerWord(null),
+        footer: h(Button, {
+          onClick: () => {
+            const wordId = drawerWord.id;
+            setDrawerWord(null);
+            onNavigateKnowledge('word', wordId);
+          },
+        }, t('reader.openInKnowledge')),
+      },
+      h(WordCard, {
+        t, word: drawerWord,
+        onFavorite: (id, value) => updateWord(id, { favorite: value }),
+        onMastery: (id, value) => updateWord(id, { masteryLevel: value }),
+      }))
+      : null,
+
+    action.error ? h(Alert, null, action.error.message) : null);
+}
+
+export { ArticleDetail };
