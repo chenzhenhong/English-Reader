@@ -276,6 +276,22 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
       detail.reload();
     }
   };
+  /**
+   * Re-fetch the source page, keep only the prose and re-segment the article.
+   *
+   * An article imported before the cleaner existed still carries the page's
+   * chrome in its body. Cleaning it changes every sentence offset, so the
+   * analysis is dropped and the reader is told to run it again.
+   */
+  const cleanBody = async () => {
+    const result = await action.run(() => call('cleanArticle', { articleId }));
+    if (!result) return;
+    notify(t('reader.cleaned', {
+      before: result.wordsBefore,
+      after: result.wordsAfter,
+    }), 'ok');
+    detail.reload();
+  };
   const removeArticle = async () => {
     const removed = await action.run(() => call('deleteArticle', { articleId }));
     if (removed) onBack();
@@ -358,6 +374,10 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
         ],
         value: mode, onChange: setMode,
       }),
+      h(Button, {
+        variant: 'ghost', icon: h(Icons.broom, null), disabled: action.pending || running, onClick: cleanBody,
+        title: t('reader.cleanHint'),
+      }, t('reader.clean')),
       h(Button, {
         variant: 'primary', icon: h(Icons.sparkle, null), disabled: action.pending || running, onClick: startAnalysis,
       }, running ? t('reader.analyzing') : data.analysis ? t('common.reanalyze') : t('articles.analyze'))),

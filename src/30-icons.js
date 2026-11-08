@@ -103,6 +103,11 @@ const Icons = {
   sparkle: () => React.createElement(Icon, null,
     React.createElement('path', { d: 'M12 4.4l1.8 4.4 4.4 1.8-4.4 1.8L12 16.8l-1.8-4.4L5.8 10.6l4.4-1.8z' }),
     React.createElement('path', { d: 'M18.4 15.4l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z' })),
+  /** A brush: cleaning the body of a stored article. */
+  broom: () => React.createElement(Icon, null,
+    React.createElement('path', { d: 'M14.8 3.8 20.2 9.2l-2.4 2.4-5.4-5.4z' }),
+    React.createElement('path', { d: 'M11.4 7.2 16.8 12.6l-4.2 6.2a2.4 2.4 0 0 1-3.4 0l-.2-.2a2.4 2.4 0 0 1 0-3.4z' }),
+    React.createElement('path', { d: 'M5.4 19.4h13.2' })),
   warning: () => React.createElement(Icon, null,
     React.createElement('path', { d: 'M12 4.8 20 18.4H4z' }),
     React.createElement('path', { d: 'M12 9.6v3.6M12 15.8v.4' })),

@@ -20,6 +20,7 @@ const suites = [
   ['study-history', 'tests/study-history.mjs'],
   ['word-limit', 'tests/word-limit.mjs'],
   ['discovery-persist', 'tests/discovery-persist.mjs'],
+  ['cleaner', 'tests/cleaner.mjs'],
   ['stage-counter', 'tests/stage-counter.mjs'],
   ['bento', 'tests/bento.mjs'],
   ['bundle', 'tests/bundle.mjs'],
