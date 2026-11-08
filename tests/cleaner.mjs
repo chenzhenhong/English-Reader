@@ -7,6 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { cleanArticle, normalizeParagraphs, proseScore, dedupeBlocks } from '../lib/clean.js';
+import { extractTitle } from '../lib/text.js';
 
 let passed = 0;
 let failed = 0;
@@ -94,6 +95,29 @@ console.log('\na repeated standfirst is kept once');
   const occurrences = result.text.split(standfirst).length - 1;
   check('the standfirst appears once', occurrences === 1, String(occurrences));
   check('the body paragraph is kept', /lowers blood pressure/.test(result.text));
+}
+
+console.log('\nheadline extraction');
+{
+  // A page's <title> is a display label; the article's own headline is what
+  // the reader should see.
+  const npr = '<head><title>Some headline about things : NPR</title>'
+    + '<meta property="og:site_name" content="NPR"><meta property="og:title" content="Some headline about things"></head>';
+  check('the social-card title wins', extractTitle(npr) === 'Some headline about things', extractTitle(npr));
+
+  const guardian = '<head><title>A story headline here | Health | The Guardian</title></head>';
+  check('a section and site suffix are stripped', extractTitle(guardian) === 'A story headline here', extractTitle(guardian));
+
+  const heading = '<head><title>t : NPR</title></head><body><h1>Headline from the page</h1></body>';
+  check('the visible h1 is used before the title', extractTitle(heading) === 'Headline from the page', extractTitle(heading));
+
+  const plain = '<head><title>A Plain Headline Without Any Suffix</title></head>';
+  check('a plain title is untouched', extractTitle(plain) === 'A Plain Headline Without Any Suffix', extractTitle(plain));
+
+  const colons = '<head><title>Analysis: what the vote means for the next two years</title></head>';
+  check('a colon inside the headline is kept', extractTitle(colons) === 'Analysis: what the vote means for the next two years', extractTitle(colons));
+
+  check('an empty document has no title', extractTitle('') === '');
 }
 
 console.log('\nan empty or broken page yields nothing');
