@@ -236,10 +236,21 @@ function ProfileForm({ t, profile, collection, onChange }) {
 }
 
 /** One candidate row with its explainable score. */
-function CandidateRow({ t, candidate, selected, onToggle, failure }) {
-  return h('div', { className: 'er-candidate', 'data-selected': selected === true, 'data-failed': failure !== undefined },
-    h('label', { className: 'er-check', style: { flex: 'none' } },
-      h('input', { type: 'checkbox', checked: selected === true, onChange: () => onToggle(candidate.id) })),
+function CandidateRow({ t, candidate, selected, onToggle, failure, onPreview }) {
+  return h('div', {
+    className: 'er-candidate', 'data-selected': selected === true, 'data-failed': failure !== undefined,
+    // Clicking the row opens the preview; the checkbox and the source link
+    // keep their own behaviour.
+    onClick: onPreview ? () => onPreview(candidate) : undefined,
+  },
+    h('label', {
+      className: 'er-check', style: { flex: 'none' },
+      onClick: (event) => event.stopPropagation(),
+    },
+      h('input', {
+        type: 'checkbox', checked: selected === true, onChange: () => onToggle(candidate.id),
+        onClick: (event) => event.stopPropagation(),
+      })),
     h(Thumb, { id: candidate.id }),
     h('div', { className: 'er-row-body' },
       h('div', { className: 'er-row-title' }, candidate.title),
@@ -261,6 +272,7 @@ function CandidateRow({ t, candidate, selected, onToggle, failure }) {
     h('a', {
       href: candidate.url, target: '_blank', rel: 'noreferrer noopener',
       className: 'er-btn ghost sm', style: { textDecoration: 'none' },
+      onClick: (event) => event.stopPropagation(),
     }, t('common.source')));
 }
 
@@ -498,7 +510,7 @@ function useDiscoveryState(t, notify) {
     }
   };
   return {
-    profiles, settings, profile, setProfile, pending, candidates, setCandidates,
+    profiles, settings, profile, setProfile, pending, candidates, setCandidates, setTotal,
     reports, selected, action, shown, total, paged, hasMore, progress, search,
     toggle, importSelected, discardSelected, loadMore, loadingMore, failures,
   };
@@ -542,6 +554,90 @@ function DiscoveryTab({ t, notify, state }) {
 }
 
 /**
+ * Preview one candidate before importing it.
+ *
+ * Clicking a candidate row opens this dialog with the cleaned body, the
+ * counts and the two decisions the reader can make about it: import it into
+ * the library, or drop it from the candidate list. Both are per-article, so
+ * one bad candidate cannot affect the others.
+ */
+function CandidatePreview({ t, notify, candidate, onClose, onChanged }) {
+  const action = useAction();
+  const [preview, setPreview] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  // Fetch the body on open. The candidate row only carries the title and a
+  // snippet, which is not enough to judge whether the article is worth keeping.
+  React.useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    setError(null);
+    call('importUrl', { url: candidate.url }).then((result) => {
+      if (!cancelled) setPreview(result);
+    }).catch((err) => {
+      if (!cancelled) setError(err?.message ?? t('discover.previewFailed'));
+    });
+    return () => { cancelled = true; };
+  }, [candidate.id, candidate.url]);
+
+  const importOne = async () => {
+    const results = await action.run(() => call('confirmImport', { candidateIds: [candidate.id] }));
+    if (results) {
+      const ok = results.filter((item) => item.ok);
+      if (ok.length > 0) {
+        notify(t('discover.importDone', { count: ok.length }), 'ok');
+        onChanged([candidate.id]);
+        onClose();
+      } else {
+        notify(results[0]?.error ?? t('discover.importNone'), 'error');
+      }
+    }
+  };
+
+  const deleteOne = async () => {
+    const result = await action.run(() => call('discardCandidates', { candidateIds: [candidate.id] }));
+    if (result) {
+      notify(t('discover.discarded', { count: result.removed }), 'ok');
+      onChanged([candidate.id]);
+      onClose();
+    }
+  };
+
+  const body = h('div', { className: 'er-candidate-preview' },
+    h('div', { className: 'er-row-meta' },
+      h(Badge, { tone: cefrTone(preview?.cefrLevel ?? candidate.cefrLevel) }, `${preview?.cefrLevel ?? candidate.cefrLevel ?? '—'} · AI 估计`),
+      h('span', null, `${preview?.wordCount ?? candidate.wordCount ?? 0} ${t('common.words')}`),
+      preview && h('span', { className: 'er-crumb-dot' }),
+      preview && h('span', null, `${preview.sentenceCount} ${t('common.sentences')}`),
+      preview && h('span', { className: 'er-crumb-dot' }),
+      preview && h('span', null, `${preview.paragraphCount} ${t('common.paragraphs')}`)),
+    preview?.duplicateArticleId
+      ? h(Alert, { tone: 'warn' }, t('discover.duplicate'))
+      : null,
+    error
+      ? h(Alert, null, error)
+      : preview
+        ? h('div', {
+          className: 'er-prose er-candidate-preview-body',
+        },
+          preview.text.split(/\n{2,}/).map((paragraph, index) => h('p', { key: index }, paragraph)))
+        : h('div', { style: { padding: '12px 0' } }, h(Skeleton, { height: 18, radius: 8 }), h(Skeleton, { height: 18, radius: 8 }), h(Skeleton, { height: 18, radius: 8 })));
+
+  return h(Dialog, {
+    title: candidate.title,
+    size: 'wide',
+    onClose,
+    footer: h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
+      h(Button, { variant: 'ghost', onClick: onClose }, t('common.close')),
+      h(Button, { variant: 'danger', disabled: action.pending, onClick: deleteOne }, t('discover.discardSelected')),
+      h(Button, {
+        variant: 'primary', disabled: action.pending || (preview?.duplicateArticleId !== undefined && preview.duplicateArticleId !== null),
+        onClick: importOne,
+      }, preview?.duplicateArticleId ? t('discover.alreadySaved') : t('discover.importSelected'))),
+  }, body);
+}
+
+/**
  * The discovered content tab: the candidates a run produced, and the report.
  *
  * The list is one screen tall and loads the next page when the reader reaches
@@ -549,9 +645,12 @@ function DiscoveryTab({ t, notify, state }) {
  */
 function DiscoveredTab({ t, notify, state }) {
   const {
-    shown, total, paged, hasMore, reports, selected, action, toggle,
+    shown, total, paged, hasMore, reports, selected, action, toggle, pending,
+    setCandidates, setTotal,
     importSelected, discardSelected, progress, loadMore, loadingMore, failures,
   } = state;
+  // Which candidate the reader opened for a preview.
+  const [previewCandidate, setPreviewCandidate] = React.useState(null);
   const failedSources = reports.filter((report) => report.ok === false);
 
   const reportRows = reports.map((report) => h('div', {
@@ -577,6 +676,7 @@ function DiscoveredTab({ t, notify, state }) {
   const candidateRows = shown.map((candidate) => h(CandidateRow, {
     key: candidate.id, t, candidate, selected: selected.includes(candidate.id),
     onToggle: toggle, failure: failures.get(candidate.id),
+    onPreview: (candidate) => setPreviewCandidate(candidate),
   }));
 
   // The list scrolls inside its own border; when the reader reaches the
@@ -610,7 +710,22 @@ function DiscoveredTab({ t, notify, state }) {
 
   return h('div', { className: 'er-discover-results' },
     progress?.running === true ? h(RunProgress, { t, progress }) : null,
-    h(Board, null, resultsCard, reportCard));
+    h(Board, null, resultsCard, reportCard),
+    previewCandidate
+      ? h(CandidatePreview, {
+        t, notify, candidate: previewCandidate,
+        onClose: () => setPreviewCandidate(null),
+        onChanged: (removedIds) => {
+          // Drop the rows locally so the list updates immediately; the reload
+          // is the background refresh for the total and any later pages.
+          if (Array.isArray(removedIds) && removedIds.length > 0) {
+            setCandidates((current) => (current ?? []).filter((item) => !removedIds.includes(item.id)));
+            setTotal((count) => Math.max(0, count - removedIds.length));
+          }
+          pending.reload();
+        },
+      })
+      : null);
 }
 
 /** URL import tab with a fetched preview. */

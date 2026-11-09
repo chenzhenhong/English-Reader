@@ -1185,20 +1185,54 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
 }
 
 
-// TEMP PROBE: render the dashboard with the real payload.
+// Study history: the feed must own its height, the heatmap must drive its
+// filter, and the feed must page as it scrolls.
 {
-  const real = JSON.parse(readFileSync('/tmp/real-dashboard.json', 'utf8'));
-  globalThis.__fetchDelegate = async (_url, init) => {
-    const { op } = JSON.parse(init.body);
-    const map = { dashboard: real, accountName: null, studyActivity: { window: 364, today: '2026-11-08', startDay: '2025-11-10', endDay: '2026-11-08', peakSeconds: 103, days: [{ day: '2026-11-08', events: 7, seconds: 103, minutes: 2, kinds: ['read'] }], totals: { seconds: 103, minutes: 2, events: 7, activeDays: 1, currentStreak: 1, longestStreak: 1 }, byKind: {}, byArticle: [] } };
-    return { ok: true, status: 200, json: async () => ({ ok: true, value: map[op] ?? null }) };
-  };
-  const nodes = await mount(React.createElement(P.Dashboard, { t, onNavigate: noop, onOpen: noop, onRetry: noop }));
-  const flat2 = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat2(n.children ?? [])]));
-  const all = flat2(nodes);
-  console.log('PROBE real dashboard nodes:', all.length);
-  console.log('PROBE has greeting:', all.some((n) => n.type === 'h1'));
-  console.log('PROBE has heat cells:', all.filter((n) => String(n.props?.className ?? '') === 'er-heat-cell').length);
+  const history = readFileSync(new URL('../src/105-history.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/20-style.js', import.meta.url), 'utf8');
+
+  check('the feed scrolls inside its own border',
+    /\.er-feed-scroll\s*\{[^}]*overflow-y:\s*auto/.test(css));
+  check('the feed has a bounded height',
+    /\.er-feed-scroll\s*\{[^}]*max-height:/.test(css));
+
+  check('the heatmap cells carry a pick handler',
+    /onClick:\s*\(event\)\s*=>\s*\{/.test(history) && history.includes('onPickDay(cell.day)'));
+  check('the heatmap is only pickable on days with activity',
+    history.includes("'data-pickable': onPickDay !== undefined && cell.events > 0 && !cell.future"));
+  check('clicking the selected day clears the filter',
+    /setSelectedDay\(\(current\) => \(current === day \? null : day\)\)/.test(history));
+  check('the feed loads a first page when the filter changes',
+    /eventsLimit: FEED_PAGE,\s*\n\s*eventsOffset: offset/.test(history)
+    && history.includes('loadFeed(0, true)'));
+  check('the feed pages on scroll',
+    /remaining < 160\) loadFeed/.test(history));
+  check('a new day filter resets the feed',
+    /setFeedEvents\(\[\]\);\s*\n\s*setFeedHasMore\(false\)/.test(history));
+  check('the filter is visible in the topbar', history.includes("t('history.onlyDay')"));
+
+  const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
+  for (const key of ['history.onlyDay', 'history.clearDay', 'history.loadMore', 'history.listEnd']) {
+    check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
+  }
+}
+
+// Discovered candidates: the row opens a preview, and the preview offers the
+// two per-article decisions the batch buttons do.
+{
+  const discover = readFileSync(new URL('../src/60-discover.js', import.meta.url), 'utf8');
+  check('a candidate row opens a preview', /onPreview: \(candidate\) => setPreviewCandidate/.test(discover));
+  check('the checkbox does not open the preview',
+    /onClick: \(event\) => event\.stopPropagation\(\)/.test(discover));
+  check('the preview fetches the body', discover.includes("call('importUrl', { url: candidate.url })"));
+  check('the preview offers an import', /confirmImport', \{ candidateIds: \[candidate\.id\] \}/.test(discover));
+  check('the preview offers a delete', /discardCandidates', \{ candidateIds: \[candidate\.id\] \}/.test(discover));
+  check('the preview is a dialog', /size: 'wide'/.test(discover));
+
+  const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
+  for (const key of ['discover.previewFailed', 'common.close']) {
+    check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
+  }
 }
 
 // Settings layout integrity: every row must be a direct child of its cell. A

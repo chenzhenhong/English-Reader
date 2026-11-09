@@ -448,6 +448,15 @@ body[data-ds-dark-theme] .er-root {
    reader sees why instead of a silent no-op. */
 .er-candidate[data-failed="true"] { border-color: color-mix(in srgb, var(--er-amber) 45%, transparent); }
 .er-candidate-error { margin-top: 4px; font-size: 10.5px; line-height: 16px; color: var(--dsw-alias-state-error-primary); }
+/* The preview dialog body: the cleaned text, scrollable, and the two
+   per-article decisions at the foot. */
+.er-candidate-preview { display: flex; flex-direction: column; gap: 10px; }
+.er-candidate-preview-body {
+  max-height: 48vh; overflow-y: auto; padding-right: 6px;
+  font-size: 13px; line-height: 24px;
+}
+.er-candidate-preview-body p { margin: 0 0 10px; }
+.er-candidate-preview-body p:last-child { margin-bottom: 0; }
 .er-candidate .er-thumb { width: 78px; height: 54px; border-radius: var(--er-r-sm); }
 .er-reasons { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
 
@@ -691,8 +700,32 @@ body[data-ds-dark-theme] .er-root {
 .er-heat-cell[data-level="4"] { background: var(--er-violet); }
 .er-heat-cell[data-future="true"] { background: transparent; border-color: color-mix(in srgb, var(--er-line) 60%, transparent); }
 .er-heat-grid .er-heat-cell:hover { border-color: color-mix(in srgb, var(--er-violet) 70%, transparent); transform: scale(1.18); }
+.er-heat-cell[data-pickable="true"] { cursor: pointer; }
+.er-heat-cell[data-pickable="true"]:hover { border-color: var(--er-violet); }
+/* The selected day is the one the feed below is filtered to. */
+.er-heat-cell[data-selected="true"] {
+  border-color: var(--er-violet);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--er-violet) 45%, transparent);
+}
 .er-heat-legend { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .er-heat-legend .er-heat-cell { width: 10px; height: 10px; aspect-ratio: auto; }
+/* The feed owns its height: one screen, scrolling inside its own border.
+   Without this the page grows past the viewport and the heatmap scrolls away. */
+.er-feed-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: 520px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
+}
+.er-feed-scroll::-webkit-scrollbar { width: 8px; }
+.er-feed-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--er-ink-3) 30%, transparent);
+}
+
 /* -------------------------------------------------------------- study feed */
 .er-feed { display: flex; flex-direction: column; gap: 0; }
 .er-feed-headline { margin: 0; font-size: 17px; line-height: 24px; font-weight: 680; letter-spacing: -.01em; }

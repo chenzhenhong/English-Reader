@@ -106,7 +106,7 @@ function monthLabels(columns) {
 }
 
 /** The contribution grid. */
-function ActivityGrid({ t, days, peakSeconds, weeks, endDay }) {
+function ActivityGrid({ t, days, peakSeconds, weeks, endDay, onPickDay, selectedDay }) {
   const columns = React.useMemo(
     () => buildWeeks(days, peakSeconds, weeks, endDay),
     [days, peakSeconds, weeks, endDay],
@@ -130,7 +130,16 @@ function ActivityGrid({ t, days, peakSeconds, weeks, endDay }) {
               className: 'er-heat-cell',
               'data-level': cell.level,
               'data-future': cell.future === true ? 'true' : undefined,
+              'data-pickable': onPickDay !== undefined && cell.events > 0 && !cell.future,
+              'data-selected': selectedDay === cell.day ? 'true' : undefined,
               title: daySummary(t, cell),
+              // Clicking a day narrows the feed; clicking the same day again
+              // clears the filter. Future days and empty days are not clickable.
+              onClick: (event) => {
+                if (onPickDay === undefined) return;
+                if (event.target !== event.currentTarget) return;
+                onPickDay(cell.day);
+              },
             }))))))),
     h('div', { className: 'er-heat-legend' },
       h('span', { className: 'er-card-sub' }, t('history.less')),
@@ -138,15 +147,22 @@ function ActivityGrid({ t, days, peakSeconds, weeks, endDay }) {
       h('span', { className: 'er-card-sub' }, t('history.more'))));
 }
 
+/** Page size for the activity feed. The feed scrolls inside a fixed height,
+ * so one screen is enough to decide whether to load more. */
+const FEED_PAGE = 40;
+
 /**
  * Activity feed: one section per active day, newest first.
  *
  * Each day lists the articles actually read that day with the measured time, so
  * the log answers "where did the time go", not just "did I show up".
+ *
+ * The events arrive newest first and paged; the caller appends each page. When
+ * the reader reaches the bottom, `onLoadMore` fetches the next one.
  */
-function ActivityFeed({ t, activity }) {
+function ActivityFeed({ t, events, hasMore, loading, onLoadMore }) {
   const byDay = new Map();
-  for (const event of activity.events ?? []) {
+  for (const event of events ?? []) {
     if (!byDay.has(event.day)) byDay.set(event.day, []);
     byDay.get(event.day).push(event);
   }
@@ -209,7 +225,14 @@ function ActivityFeed({ t, activity }) {
       h('span', null, `${article.events} ${t('history.events')}`))),
   h('div', { className: 'er-feed-time' }, duration(t, article.seconds))))));
 
-  return h('div', { className: 'er-feed' }, dayNodes);
+  const more = hasMore
+    ? h('div', { className: 'er-more' },
+      h(Button, { variant: 'ghost', disabled: loading, onClick: onLoadMore },
+        loading ? t('common.working') : t('history.loadMore')))
+    : h('div', { className: 'er-more er-more--end' },
+      t('history.listEnd'));
+
+  return h('div', { className: 'er-feed' }, dayNodes, more);
 }
 
 /** The log always covers one year: 53 week columns. */
@@ -223,7 +246,7 @@ const HISTORY_WEEKS = 53;
  * Extracted so the dashboard renders exactly this, not a look-alike. `actions`
  * lets a host add a link without duplicating the body.
  */
-function StudyHeatmapCard({ t, activity, actions }) {
+function StudyHeatmapCard({ t, activity, actions, onPickDay, selectedDay }) {
   const totals = activity.totals;
   return h(Cell, {
     span: 12,
@@ -244,6 +267,8 @@ function StudyHeatmapCard({ t, activity, actions }) {
       peakSeconds: activity.peakSeconds,
       weeks: HISTORY_WEEKS,
       endDay: activity.endDay,
+      onPickDay,
+      selectedDay,
     }),
     activity.days.length === 0 ? h(Alert, { tone: 'warn' }, t('history.emptyHint')) : null));
 }
@@ -251,9 +276,56 @@ function StudyHeatmapCard({ t, activity, actions }) {
 /** Study history page: totals, the grid, and the day-by-day feed. */
 function StudyHistoryPage({ t, notify }) {
   const data = useLoad(
-    () => call('studyActivity', { days: HISTORY_WEEKS * 7, includeEvents: true }),
+    () => call('studyActivity', { days: HISTORY_WEEKS * 7 }),
     [],
   );
+  // Which day the heatmap clicked. null means every day, newest first.
+  const [selectedDay, setSelectedDay] = React.useState(null);
+  // The feed is paged and appended, so the reader never re-fetches what is
+  // already on screen.
+  const [feedEvents, setFeedEvents] = React.useState([]);
+  const [feedHasMore, setFeedHasMore] = React.useState(false);
+  const [feedLoading, setFeedLoading] = React.useState(false);
+  const feedOffset = React.useRef(0);
+
+  /** Load the first page of the feed, or the whole feed when the day filter changes. */
+  const loadFeed = React.useCallback(async (offset, replace) => {
+    setFeedLoading(true);
+    const result = await call('studyActivity', {
+      days: HISTORY_WEEKS * 7,
+      includeEvents: true,
+      day: selectedDay ?? undefined,
+      eventsLimit: FEED_PAGE,
+      eventsOffset: offset,
+    });
+    feedOffset.current = offset;
+    setFeedEvents((current) => (replace ? (result.events ?? []) : [...current, ...(result.events ?? [])]));
+    setFeedHasMore(result.eventsHasMore === true);
+    setFeedLoading(false);
+  }, [selectedDay]);
+
+  // A new day filter starts the feed over: the previous pages belong to other days.
+  React.useEffect(() => {
+    let cancelled = false;
+    feedOffset.current = 0;
+    setFeedEvents([]);
+    setFeedHasMore(false);
+    loadFeed(0, true).catch(() => {
+      if (!cancelled) setFeedLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedDay, loadFeed]);
+
+  /** The feed scrolls inside a fixed height; reaching the bottom fetches the next page. */
+  const onFeedScroll = React.useCallback((event) => {
+    const box = event.target;
+    const remaining = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (remaining < 160) loadFeed(feedOffset.current + FEED_PAGE, false);
+  }, [loadFeed]);
+
+  // Clicking the selected day again clears the filter.
+  const pickDay = (day) => setSelectedDay((current) => (current === day ? null : day));
+
   if (data.status === 'loading' && !data.data) {
     return h('div', { className: 'er-page' },
       h(Skeleton, { height: 150, radius: 18 }), h(Skeleton, { height: 180, radius: 18 }));
@@ -271,6 +343,15 @@ function StudyHistoryPage({ t, notify }) {
         h('span', { className: 'er-crumb-dot' }),
         h('span', null, t('nav.history'))),
       h('div', { className: 'er-topbar-spacer' }),
+      // The filter is shown here because it changes what the feed below shows,
+      // and the heatmap is the thing that sets it.
+      selectedDay !== null
+        ? h(Button, {
+          size: 'sm', variant: 'ghost',
+          title: t('history.clearDay'),
+          onClick: () => setSelectedDay(null),
+        }, `${t('history.onlyDay')} ${selectedDay}`)
+        : null,
       h('span', { className: 'er-card-sub' }, `${activity.startDay} → ${activity.endDay ?? activity.today}`)),
 
     // Headline sentence, mirroring "2,533 contributions in the last year".
@@ -290,10 +371,26 @@ function StudyHistoryPage({ t, notify }) {
           h('span', { className: 'er-card-sub' },
             `${t('history.byKind')} · ${(activity.byArticle ?? []).length} ${t('history.articles')}`)))),
 
-    h(StudyHeatmapCard, { t, activity }),
+    h(StudyHeatmapCard, {
+      t, activity,
+      onPickDay: pickDay,
+      selectedDay,
+    }),
 
+    // The feed owns its height: one screen, scrolling inside its own border.
+    // Without that the page grows past the viewport and the heatmap scrolls away.
     h(Cell, { span: 12, eyebrow: t('history.feedTitle'), icon: h(Icons.clock, null) },
-      h(ActivityFeed, { t, activity })));
+      h('div', {
+        className: 'er-feed-scroll',
+        onScroll: onFeedScroll,
+      },
+      h(ActivityFeed, {
+        t,
+        events: feedEvents,
+        hasMore: feedHasMore,
+        loading: feedLoading,
+        onLoadMore: () => loadFeed(feedOffset.current + FEED_PAGE, false),
+      }))));
 }
 
 export { StudyHistoryPage, StudyHeatmapCard, buildWeeks, dayKey, duration, ActivityFeed };
