@@ -653,6 +653,21 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the reading page shares the same delete copy', reader.includes("t('reader.deleteConfirm', { title: article.title })"));
 }
 
+// The discovered list offers two opposite fates for a checked candidate:
+// import it into the library, or drop it from the list. Both must be wired.
+{
+  const source = readFileSync(new URL('../src/60-discover.js', import.meta.url), 'utf8');
+  check('the discovered list imports selected', source.includes("call('confirmImport'"));
+  check('the discovered list also drops selected', source.includes("call('discardCandidates'"));
+  check('the drop button is rendered beside the import button', /h\(Button, \{ variant: 'danger', onClick: discardSelected/.test(source));
+  check('the drop action clears the selection', /setSelected\(\[\]\);/.test(source.slice(source.indexOf('const discardSelected'))));
+  check('the drop action removes the rows from the list', /filter\(\(item\) => !ids\.includes\(item\.id\)\)/.test(source));
+  const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
+  for (const key of ['discover.discardSelected', 'discover.discarded']) {
+    check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
+  }
+}
+
 // Mode ownership: split mode is per-sentence close reading, continuous mode is
 // whole-article reading with the analysis tabs. Neither may render both.
 {

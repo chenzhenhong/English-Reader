@@ -434,6 +434,30 @@ function useDiscoveryState(t, notify) {
     }
   };
   /**
+   * Set the selected candidates aside.
+   *
+   * Opposite of importing: the learner decided these are not worth keeping, so
+   * they leave the candidate list without becoming articles.
+   */
+  const discardSelected = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    const result = await action.run(() => call('discardCandidates', { candidateIds: ids }));
+    if (!result) return;
+    // The discarded ones leave the list, exactly like the imported ones.
+    setCandidates((current) => (current ?? []).filter((item) => !ids.includes(item.id)));
+    setTotal((count) => Math.max(0, count - result.removed));
+    setSelected([]);
+    setFailures((current) => {
+      const next = new Map(current ?? []);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+    if (result.removed > 0) pending.reload();
+    notify(t('discover.discarded', { count: result.removed }), 'ok');
+  };
+
+  /**
    * Load the next page of candidates.
    *
    * Appended, never replaced: the reader has already scrolled past the rows
@@ -476,7 +500,7 @@ function useDiscoveryState(t, notify) {
   return {
     profiles, settings, profile, setProfile, pending, candidates, setCandidates,
     reports, selected, action, shown, total, paged, hasMore, progress, search,
-    toggle, importSelected, loadMore, loadingMore, failures,
+    toggle, importSelected, discardSelected, loadMore, loadingMore, failures,
   };
 }
 
@@ -526,7 +550,7 @@ function DiscoveryTab({ t, notify, state }) {
 function DiscoveredTab({ t, notify, state }) {
   const {
     shown, total, paged, hasMore, reports, selected, action, toggle,
-    importSelected, progress, loadMore, loadingMore, failures,
+    importSelected, discardSelected, progress, loadMore, loadingMore, failures,
   } = state;
   const failedSources = reports.filter((report) => report.ok === false);
 
@@ -568,7 +592,9 @@ function DiscoveredTab({ t, notify, state }) {
     eyebrow: `${t('discover.results')}${shown.length > 0 ? ` · ${count}` : ''}`,
     icon: h(Icons.compass, null),
     actions: selected.length > 0
-      ? h(Button, { variant: 'primary', onClick: importSelected, disabled: action.pending }, `${t('discover.importSelected')} (${selected.length})`)
+      ? h('div', { style: { display: 'flex', gap: 8 } },
+        h(Button, { variant: 'primary', onClick: importSelected, disabled: action.pending }, `${t('discover.importSelected')} (${selected.length})`),
+        h(Button, { variant: 'danger', onClick: discardSelected, disabled: action.pending }, `${t('discover.discardSelected')} (${selected.length})`))
       : null,
   },
   shown.length === 0
