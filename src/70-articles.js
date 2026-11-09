@@ -2,6 +2,7 @@
 
 /** One library row. */
 function ArticleRow({ t, article, onOpen, onAnalyze, onDelete, pending }) {
+  // The whole article, not just its id: the delete dialog names what it takes.
   return h('div', { className: 'er-row', style: { cursor: 'default' } },
     h('div', {
       onClick: () => onOpen(article.id),
@@ -47,7 +48,7 @@ function ArticleRow({ t, article, onOpen, onAnalyze, onDelete, pending }) {
       h(Button, {
         size: 'sm', variant: 'ghost', iconOnly: true, children: t('common.delete'),
         icon: h(Icons.trash, null),
-        onClick: () => onDelete(article.id),
+        onClick: () => onDelete(article),
       })));
 }
 
@@ -59,6 +60,9 @@ function Articles({ t, notify, onOpenArticle, initialSearch }) {
   const [source, setSource] = React.useState('');
   const list = useLoad(() => call('listArticles', { search, cefrLevel: cefr || undefined, analysisStatus: status || undefined, sourceName: source || undefined, limit: 60 }), [search, cefr, status, source]);
   const action = useAction();
+  // The article awaiting deletion. The action runs only after the learner has
+  // accepted what it costs them.
+  const [confirmDelete, setConfirmDelete] = React.useState(null);
   React.useEffect(() => {
     if (initialSearch) setSearch(initialSearch);
   }, [initialSearch]);
@@ -69,8 +73,10 @@ function Articles({ t, notify, onOpenArticle, initialSearch }) {
       onOpenArticle(articleId);
     }
   };
-  const remove = async (articleId) => {
-    const done = await action.run(() => call('deleteArticle', { articleId }), t('articles.deleted'));
+  /** Ask before removing, then act only on an acceptance. */
+  const confirmRemove = async (article) => {
+    setConfirmDelete(null);
+    const done = await action.run(() => call('deleteArticle', { articleId: article.id }), t('articles.deleted'));
     if (done) {
       notify(t('articles.deleted'), 'ok');
       list.reload();
@@ -110,8 +116,22 @@ function Articles({ t, notify, onOpenArticle, initialSearch }) {
       },
         list.data.items.map((article) => h(ArticleRow, {
           key: article.id, t, article,
-          onOpen: onOpenArticle, onAnalyze: analyze, onDelete: remove, pending: action.pending,
+          onOpen: onOpenArticle, onAnalyze: analyze, onDelete: (article) => setConfirmDelete(article), pending: action.pending,
         })))),
+    // The same delete the reading page asks for, with the same wording: the
+    // operation is identical, so the copy should not drift.
+    confirmDelete
+      ? h(ConfirmDialog, {
+        title: t('reader.deleteConfirmTitle'),
+        description: h('div', { className: 'er-confirm-body' },
+          h('p', null, t('reader.deleteConfirm', { title: confirmDelete.title })),
+          h('p', { className: 'er-confirm-consequence' }, t('reader.deleteConfirmConsequence'))),
+        confirmLabel: t('reader.deleteConfirmRun'),
+        cancelLabel: t('common.cancel'),
+        onConfirm: () => confirmRemove(confirmDelete),
+        onCancel: () => setConfirmDelete(null),
+      })
+      : null,
     action.error && h(Alert, null, action.error.message));
 }
 

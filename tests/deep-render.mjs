@@ -638,6 +638,21 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the delete copy receives the title', /t\('reader.deleteConfirm', \{ title: article\.title \}\)/.test(source));
 }
 
+// The library page deletes rows too, and a mis-click there removes an article
+// the learner was browsing. It must ask before acting.
+{
+  const source = readFileSync(new URL('../src/70-articles.js', import.meta.url), 'utf8');
+  check('the library delete asks before acting', source.includes("onConfirm: () => confirmRemove(confirmDelete)"));
+  check('the library delete states its cost', source.includes("t('reader.deleteConfirmConsequence')"));
+  check('the row delete does not run from the button alone', /onDelete: \(article\) => setConfirmDelete\(article\)/.test(source));
+  check('the library uses the shared delete copy', source.includes("t('reader.deleteConfirm', { title: confirmDelete.title })"));
+  check('confirming clears the pending action first', /setConfirmDelete\(null\);\s*\n\s*const done = await action\.run/.test(source));
+  check('the row hands the article to the handler', /onClick: \(\) => onDelete\(article\)/.test(source));
+  // Both pages must use the same wording: the operation is identical.
+  const reader = readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8');
+  check('the reading page shares the same delete copy', reader.includes("t('reader.deleteConfirm', { title: article.title })"));
+}
+
 // Mode ownership: split mode is per-sentence close reading, continuous mode is
 // whole-article reading with the analysis tabs. Neither may render both.
 {
