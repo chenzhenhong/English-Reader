@@ -160,8 +160,6 @@ const ZH = {
   'articles.analysisStarted': '解析已开始，可在阅读页查看进度',
   'articles.deleted': '文章已删除',
   'articles.retryDone': '该阶段已重试',
-  'articles.export': '导出',
-  'articles.exported': '数据已导出',
 
   'nav.history': '学习记录',
   'history.range.1w': '一周',
@@ -566,8 +564,6 @@ const EN = {
   'articles.analysisStarted': 'Analysis started — watch progress on the reading page',
   'articles.deleted': 'Article deleted',
   'articles.retryDone': 'Stage retried',
-  'articles.export': 'Export',
-  'articles.exported': 'Data exported',
 
   'nav.history': 'Study log',
   'history.range.1w': '1 week',

@@ -79,16 +79,7 @@ function Articles({ t, notify, onOpenArticle, initialSearch }) {
     h('div', { className: 'er-topbar' },
       h('div', { className: 'er-crumb' },
         h('span', null, 'English Reader'), h('span', { className: 'er-crumb-dot' }), h('span', null, t('nav.articles'))),
-      h('div', { className: 'er-topbar-spacer' }),
-      h(Button, { icon: h(Icons.download, null), onClick: () => call('exportData').then((data) => {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `english-reader-${new Date().toISOString().slice(0, 10)}.json`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-        notify(t('articles.exported'), 'ok');
-      }) }, t('articles.export'))),
+      h('div', { className: 'er-topbar-spacer' })),
     h(Cell, { span: 12, flush: true, className: 'er-articles-cell' },
       h('div', { style: { display: 'flex', gap: 8, padding: '16px 18px 4px', flexWrap: 'wrap' } },
         h('div', { className: 'er-search', style: { flex: '1 1 220px' } },
