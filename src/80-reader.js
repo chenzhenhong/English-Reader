@@ -186,7 +186,10 @@ function WordCard({ t, word, onFavorite, onMastery, onNote }) {
         ` → ${word.wordFormation.explanation}`)),
     (word.evidence ?? []).length > 0 && h('div', { className: 'er-kv' },
       h('div', { className: 'er-kv-label' }, t('word.evidence')),
-      (word.evidence ?? []).map((item, index) => h('div', { key: index, className: 'er-example' }, item.exactText))),
+      // Evidence arrives as either a bare string or an `{exactText}` object:
+      // the model sometimes simplifies the shape. Read both.
+      (word.evidence ?? []).map((item, index) => h('div', { key: index, className: 'er-example' },
+        typeof item === 'string' ? item : item?.exactText ?? ''))),
     (word.synonyms ?? []).length > 0 && h('div', { className: 'er-kv' },
       h('div', { className: 'er-kv-label' }, t('word.synonyms')),
       h('div', { className: 'er-kv-value', style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },

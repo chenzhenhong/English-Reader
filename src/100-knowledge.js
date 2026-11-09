@@ -118,9 +118,10 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
           context.cefrLevel ? h(Badge, { tone: cefrTone(context.cefrLevel) }, context.cefrLevel) : null,
           context.sourceName ? h(Badge, { tone: 'soft' }, context.sourceName) : null),
         context.contextMeaning ? h('div', { className: 'er-struct-text' }, context.contextMeaning) : null,
+        // Same two shapes as the reader: a bare string or `{exactText}`.
         (context.evidence ?? []).map((item, at) => h('div', {
           key: at, className: 'er-example', style: { marginTop: 4 },
-        }, item.exactText)),
+        }, typeof item === 'string' ? item : item?.exactText ?? '')),
         context.analysis?.translation?.natural
           ? h('div', { className: 'er-meaning-ctx', style: { marginTop: 4 } }, context.analysis.translation.natural)
           : null)));

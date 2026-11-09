@@ -447,6 +447,28 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   }));
   const paragraphs = nodes.filter((n) => typeof n !== 'string' && n.type === 'p');
   check('ArticleBody renders one paragraph per block', paragraphs.length === 1, String(paragraphs.length));
+
+// WordCard evidence arrives as either a bare string or an `{exactText}` object;
+// the model sometimes simplifies the shape. Both must render.
+{
+  const renderWord = async (evidence) => {
+    const nodes = await mount(React.createElement(P.WordCard, {
+      t: (key) => key,
+      word: {
+        id: 'w1', lemma: 'buck', phonetic: '/bʌk/', partOfSpeech: ['verb'],
+        meanings: [{ meaning: '反抗', contextMeaning: '文中含义' }],
+        evidence, cefrLevel: 'C1', synonyms: [], antonyms: [], masteryLevel: 0,
+      },
+      onFavorite: noop, onMastery: noop, onNote: noop,
+    }));
+    return nodes.filter((n) => typeof n !== 'string' && String(n.props?.className ?? '').includes('er-example'))
+      .map((n) => n.props?.children);
+  };
+  const asObjects = await renderWord([{ exactText: 'buck the party' }]);
+  check('evidence renders when it is an object', asObjects.length === 1 && asObjects[0] === 'buck the party', JSON.stringify(asObjects));
+  const asStrings = await renderWord(['buck the party']);
+  check('evidence renders when it is a bare string', asStrings.length === 1 && asStrings[0] === 'buck the party', JSON.stringify(asStrings));
+}
   const kids = paragraphs[0]?.children ?? [];
   check('the paragraph holds both sentence spans', kids.filter((c) => typeof c !== 'string').length === 2,
     String(kids.filter((c) => typeof c !== 'string').length));
