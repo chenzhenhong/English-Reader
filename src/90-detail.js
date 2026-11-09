@@ -16,6 +16,24 @@ const STAGES_ORDER = [
   { id: 'REVIEW', labelKey: 'stage.REVIEW', hintKey: 'stageHint.REVIEW' },
 ];
 
+/** How often the detail page re-reads an analysis that is still in flight. */
+const ANALYSIS_POLL_MS = 2000;
+
+/**
+ * Whether the article's analysis is still in flight.
+ *
+ * The article row, the analysis version and the per-stage rows can disagree
+ * while a run is transitioning, so any of them saying "in flight" counts.
+ * @param {object} detail the `getArticle` payload.
+ * @returns {boolean} true while something is still running.
+ */
+function isAnalysisRunning(detail) {
+  if (!detail) return false;
+  if (detail.analysis?.status === 'RUNNING') return true;
+  if (detail.article?.status === 'ANALYZING') return true;
+  return (detail.tasks ?? []).some((task) => task.status === 'RUNNING');
+}
+
 /**
  * Per-stage counter text.
  *
@@ -259,9 +277,40 @@ function NoteList({ t, notes }) {
         ' · ', relativeDate(note.createdAt)))));
 }
 
+/**
+ * Refresh the detail page while the article's analysis is still in flight.
+ *
+ * A run can be started from the library list, the dashboard or an import, so
+ * the learner can open the article while it is still parsing. Polling the same
+ * `getArticle` payload keeps the stage strip and the sentence analyses moving
+ * instead of freezing at whatever was on screen when the page loaded. The run
+ * state is read from the latest payload, so the interval stops acting on its
+ * own once the Host settles the analysis.
+ * @param {object} detail the detail page's `useLoad` handle.
+ * @param {string} articleId the article being read.
+ */
+function useAnalysisPolling(detail, articleId) {
+  const reloadRef = React.useRef(detail.reload);
+  reloadRef.current = detail.reload;
+  const running = isAnalysisRunning(detail.data);
+  React.useEffect(() => {
+    // Poll only while a run is actually in flight, so a settled article never
+    // keeps a timer alive. `detail` is rebuilt every render, so the reload is
+    // read through a ref instead of being a dependency.
+    if (!running) return undefined;
+    // The render harness has no repeating timer, so a page that would poll
+    // there would spin forever against a static "RUNNING" fixture; only a real
+    // browser runs the loop.
+    if (typeof window === 'undefined' || typeof window.setInterval !== 'function') return undefined;
+    const timer = window.setInterval(() => reloadRef.current(), ANALYSIS_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [running, articleId]);
+}
+
 /** The reading page. */
 function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
   const detail = useLoad(() => call('getArticle', { articleId }), [articleId]);
+  useAnalysisPolling(detail, articleId);
   const [mode, setMode] = React.useState('split');
   const [active, setActive] = React.useState(-1);
   const [drawerWord, setDrawerWord] = React.useState(null);
@@ -414,7 +463,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
   const article = data.article;
   const total = Math.max(1, sentences.length);
   const ratio = sentences.length > 1 ? Math.min(1, Math.max(0, active) / (sentences.length - 1)) : 0;
-  const running = data.analysis?.status === 'RUNNING' || data.tasks.some((task) => task.status === 'RUNNING');
+  const running = isAnalysisRunning(data);
 
   const jumpToSentence = (index) => {
     setActive(index);

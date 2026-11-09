@@ -704,6 +704,33 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('continuous mode does not mount the sentence panel', !continuousArm.includes('sentencePanel'));
 }
 
+// A run started on another page keeps going while the learner opens the
+// article, so the detail page polls the same payload until the Host settles it
+// and then stops. The predicate is the shared source of truth for both.
+{
+  const running = P.isAnalysisRunning;
+  check('the detail page exposes its running predicate', typeof running === 'function');
+  check('a running analysis version counts as in flight',
+    running({ analysis: { status: 'RUNNING' }, article: { status: 'COMPLETED' }, tasks: [] }) === true);
+  check('an ANALYZING article row counts as in flight',
+    running({ analysis: null, article: { status: 'ANALYZING' }, tasks: [] }) === true);
+  check('a running stage row counts as in flight',
+    running({ analysis: null, article: { status: 'FETCHED' }, tasks: [{ status: 'RUNNING' }] }) === true);
+  check('a settled payload is not in flight',
+    running({ analysis: { status: 'COMPLETED' }, article: { status: 'COMPLETED' }, tasks: [{ status: 'SUCCEEDED' }] }) === false);
+  check('an empty payload is not in flight', running(null) === false);
+  check('a missing task list is not an error',
+    running({ analysis: null, article: { status: 'FETCHED' } }) === false);
+
+  const source = readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8');
+  check('the detail page polls while running', source.includes('useAnalysisPolling(detail, articleId)'));
+  check('the poll re-reads the article', /window\.setInterval\(\(\) => reloadRef\.current\(\), ANALYSIS_POLL_MS\)/.test(source));
+  check('the poll clears its interval', /return \(\) => window\.clearInterval\(timer\)/.test(source));
+  check('the poll stops when the run settles', /if \(!running\) return undefined;/.test(source));
+  check('the page never polls without a repeating timer',
+    source.includes("typeof window.setInterval !== 'function'"));
+}
+
 // The dashboard must not duplicate navigation the rail already provides, and
 // must not repeat totals that the stat tiles already show.
 {
