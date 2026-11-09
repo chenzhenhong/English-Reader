@@ -17,7 +17,8 @@
     "icon.svg",
     "lib/*.js",
     "lib/demo-library.json",
-    "locale/*.json"
+    "locale/*.json",
+    "pics/*.png"
   ],
   "dsh": {
     "bundle": {
