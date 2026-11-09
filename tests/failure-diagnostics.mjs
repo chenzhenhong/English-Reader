@@ -109,6 +109,24 @@ console.log('\nprose around JSON is reported with its cause');
     }
   })());
 
+  // The production failure: the model quotes English terms inside its Chinese
+  // explanations and leaves the quotes unescaped, which closes the string
+  // early. Each of these is a real shape taken from a failed run.
+  const innerQuote = '{"translation": {"literal": "他出版了一本题为"The Myth Of Red Texas"的书。"}, "natural": "x"}';
+  check('an unescaped quote inside a value is repaired',
+    extractJson(innerQuote).translation.literal === '他出版了一本题为"The Myth Of Red Texas"的书。',
+    JSON.stringify(extractJson(innerQuote)));
+  const twoPairs = '{"a": "中文说"计出票来"或"选票送达"，英文用come in"}';
+  check('several unescaped quotes are all repaired',
+    extractJson(twoPairs).a === '中文说"计出票来"或"选票送达"，英文用come in', extractJson(twoPairs).a);
+  const inArray = '{"difficultyNotes": ["中文说"计出票来"。"], "uncertaintyNotes": []}';
+  check('a quote inside an array element is repaired',
+    extractJson(inArray).difficultyNotes[0] === '中文说"计出票来"。', JSON.stringify(extractJson(inArray)));
+  // A well-formed answer must come back byte-identical, not merely equivalent.
+  const untouched = '{"a": "say \\"hi\\"", "b": "it\'s fine"}';
+  check('valid escapes are not double-escaped',
+    extractJson(untouched).a === 'say "hi"', extractJson(untouched).a);
+
   // The excerpt must include the failing region, not just the head.
   try {
     extractJson(`{"a":"${'x'.repeat(3000)}",}`);
