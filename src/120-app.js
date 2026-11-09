@@ -136,7 +136,7 @@ function EnglishReaderApp({ t }) {
   const kinds = { words: 'word', phrases: 'phrase', collocations: 'collocation', sentences: 'sentence' };
   let page = null;
   if (route.page === 'home') {
-    page = h(Dashboard, { t, onNavigate: go, onOpen: openArticle, onRetry: openArticle });
+    page = h(Dashboard, { t, onNavigate: go, onOpen: openArticle });
   } else if (route.page === 'discover') {
     page = h(Discover, {
       t, notify, onOpenArticle: openArticle,

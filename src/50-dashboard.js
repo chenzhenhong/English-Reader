@@ -90,31 +90,6 @@ function RecentReading({ t, articles, onOpen, progress }) {
   ];
 }
 
-/** Task queue reporting per-stage progress and one-click retry. */
-function TaskQueue({ t, tasks, onOpen, onRetry }) {
-  const rows = tasks.map((task, index) => h('div', {
-    key: `${task.articleId}-${task.stage}-${index}`,
-    style: { display: 'flex', alignItems: 'center', gap: 10 },
-  },
-  h('div', { style: { flex: 1, minWidth: 0 } },
-    h('div', { className: 'er-row-title' }, task.articleTitle),
-    h('div', { className: 'er-row-meta' },
-      h('span', null, STAGE_LABELS[task.stage] ?? task.stage),
-      h('span', { className: 'er-crumb-dot' }),
-      h(Badge, {
-        tone: task.status === 'FAILED' ? 'pink' : task.status === 'RUNNING' ? 'blue' : 'soft',
-      }, STATUS_LABELS[task.status] ?? task.status),
-      task.error ? h('span', null, task.error) : null)),
-  h(Button, { size: 'sm', onClick: () => onOpen(task.articleId) }, t('common.open')),
-  task.status === 'FAILED'
-    ? h(Button, {
-      size: 'sm', variant: 'primary', onClick: () => onRetry(task.articleId, task.stage),
-    }, t('common.retry'))
-    : null));
-  return h(Cell, { span: 12, eyebrow: `${t('home.tasks')} · ${tasks.length}`, icon: h(Icons.clock, null) },
-    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, rows));
-}
-
 /**
  * Dashboard study block: the very same heatmap card the history page renders.
  *
@@ -142,7 +117,7 @@ function StudyMini({ t, onNavigate }) {
 }
 
 /** The whole dashboard page. */
-function Dashboard({ t, onNavigate, onOpen, onRetry }) {
+function Dashboard({ t, onNavigate, onOpen }) {
   const data = useLoad(() => call('dashboard'), []);
   const progress = useLoad(async () => {
     const list = await call('listArticles', { limit: 200 });
@@ -169,8 +144,7 @@ function Dashboard({ t, onNavigate, onOpen, onRetry }) {
     h(Board, null,
       h(Welcome, { t, stats: tiles, onSearch: (value) => onNavigate('articles', { search: value }) }),
       ...RecentReading({ t, articles: stats.recent, onOpen, progress: progress.data ?? { ratio: 0 } }),
-      h(StudyMini, { t, onNavigate }),
-      stats.tasks.length > 0 ? h(TaskQueue, { t, tasks: stats.tasks, onOpen, onRetry }) : null));
+      h(StudyMini, { t, onNavigate })));
 }
 
 export { Dashboard };

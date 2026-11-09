@@ -99,6 +99,20 @@ console.log('\nrendered strip');
   check('strip shows 15/15 for segmentation', text.includes('15/15'));
   check('strip shows 4 successes as 15 analysed', !text.includes('4/15'));
   check('strip still surfaces the review count', text.includes('reader.needsReviewCount'));
+
+  // A run that stopped early leaves the task at PENDING while individual
+  // sentences are marked failed; the card must still open its detail, or those
+  // sentences become unreachable once the summary panel is gone.
+  const partial = [
+    { stage: 'SENTENCE_ANALYSIS', status: 'PENDING', progress: { sentences: 51, done: 3, failed: 8 } },
+  ];
+  const openable = plugin.__test.AnalysisProgress({ t: (key) => key, tasks: partial, onRetry() {}, pending: false, failedCount: 8 });
+  const openableText = JSON.stringify(openable);
+  // The click handler is a function and JSON drops it, so the assertion looks
+  // for the hit-target button that only an inspectable stage renders.
+  check('a pending stage with failed sentences opens its detail', openableText.includes('er-stage-hit'), openableText.slice(0, 300));
+  check('the failed sentence count is shown', openableText.includes('er-stage-failed-count'));
+  check('the stage is marked inspectable', openableText.includes('"data-inspectable":true'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

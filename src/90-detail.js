@@ -56,7 +56,7 @@ function stageCounter(stageId, progress) {
  * @param {object} props
  * @param {(stageId: string) => void} props.onInspect opens the stage's detail.
  */
-function AnalysisProgress({ t, tasks, onRetry, pending, onInspect }) {
+function AnalysisProgress({ t, tasks, onRetry, pending, onInspect, failedCount }) {
   const cells = STAGES_ORDER.map((stage) => {
     const task = tasks.find((item) => item.stage === stage.id);
     const status = task?.status ?? 'PENDING';
@@ -64,15 +64,24 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect }) {
     const review = stage.id === 'SENTENCE_ANALYSIS' && (task?.progress?.needsReview ?? 0) > 0
       ? ` · ${t('reader.needsReviewCount')} ${task.progress.needsReview}`
       : '';
-    // A failed stage, or one with sentences to review, has detail worth opening.
-    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW';
+    // The sentence stage fails per sentence, not as a stage: a run that stopped
+    // early leaves the task at PENDING while individual sentences are marked
+    // failed. Its detail is worth opening whenever either says so.
+    const sentenceFailures = stage.id === 'SENTENCE_ANALYSIS' && failedCount > 0;
+    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW' || sentenceFailures;
+    // A stage that has detail but did not itself fail still needs to say how
+    // many sentences went wrong, or the card looks successful.
+    const failedBadge = sentenceFailures
+      ? h('span', { className: 'er-stage-failed-count' }, `${failedCount} ${t('reader.sentencesFailed')}`)
+      : null;
     const body = h(React.Fragment, null,
       h('div', { className: 'er-stage-name' }, t(stage.labelKey, { fallback: stage.id }),
         inspectable ? h(Icons.chevron, { dir: 'right' }) : null),
       h('div', { className: 'er-stage-hint' }, t(stage.hintKey, { fallback: '' }),
         // The status line is where the count lives, so it stays last.
       ),
-      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`));
+      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`),
+      failedBadge);
     return h('div', { key: stage.id, className: 'er-stage', 'data-status': status, 'data-inspectable': inspectable },
       inspectable
         ? h('button', {
@@ -99,8 +108,8 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect }) {
  * @param {object} props
  * @param {boolean|null} props.open null = follow the automatic rule.
  */
-function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onToggle, onInspect }) {
-  const needsAttention = running || tasks.some((task) => (
+function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onToggle, onInspect, failedCount }) {
+  const needsAttention = running || failedCount > 0 || tasks.some((task) => (
     task.status === 'FAILED' || task.status === 'NEEDS_REVIEW'
   ));
   const expanded = open === null ? needsAttention : open;
@@ -139,7 +148,7 @@ function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onTo
     bar,
     expanded
       ? h(React.Fragment, null,
-        h(AnalysisProgress, { t, tasks, onRetry, pending, onInspect }),
+        h(AnalysisProgress, { t, tasks, onRetry, pending, onInspect, failedCount }),
         running ? h(Alert, { tone: 'warn' }, t('reader.analysisRunning')) : null)
       : null));
 }
@@ -462,6 +471,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
       open: bandOpen,
       onToggle: setBandOpen,
       onInspect: setInspectStage,
+      failedCount: sentences.filter((item) => item.analysisStatus === 'failed').length,
     }),
 
     h('div', { className: 'er-reader er-reader--fill' },

@@ -834,6 +834,8 @@ body[data-ds-dark-theme] .er-root {
 .er-stage-hit:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: var(--er-r-xs); }
 .er-stage[data-inspectable="true"] .er-stage-name { display: flex; align-items: center; gap: 4px; }
 .er-stage[data-inspectable="true"] .er-stage-name svg { width: 11px; height: 11px; opacity: .7; }
+/* "3 句失败": the stage itself may not fail when only some sentences did. */
+.er-stage-failed-count { font-size: 10px; color: var(--dsw-alias-state-error-primary); }
 
 /* Stage detail dialog: codes, the reason, and the failing sentences. */
 .er-stage-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px var(--er-s-5) 16px; }

@@ -87,18 +87,6 @@ function cefrTone(level) {
   return 'amber';
 }
 
-/** Human label for an analysis stage. */
-const STAGE_LABELS = {
-  OVERVIEW: '文章导读',
-  DIFFICULTY: '难度评估',
-  VOCABULARY: '重点单词',
-  PHRASES: '重点短语',
-  COLLOCATIONS: '固定搭配',
-  SEGMENTATION: '句子切分',
-  SENTENCE_ANALYSIS: '逐句解析',
-  REVIEW: '文章复盘',
-};
-
 /** Human label for a stage status. */
 const STATUS_LABELS = {
   PENDING: '待执行',
