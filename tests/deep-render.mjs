@@ -832,6 +832,41 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the collapsed band is shorter', /\.er-reader-band--collapsed[^{]*\{[^}]*padding-top:\s*10px/.test(css));
 }
 
+// The attention badge must count what the learner can act on. A run that
+// stopped part-way leaves the sentence stage at PENDING while its sentences
+// are FAILED, and the badge used to count stages only — so an article with
+// eight failed sentences reported "0 项待处理".
+{
+  const render = async (props) => {
+    const nodes = await mount(React.createElement(P.Band, {
+      t, ratio: 0.5, position: '1 / 2', pending: false, onRetry: noop, onToggle: noop, ...props,
+    }));
+    return [...new Set(nodes.filter((n) => typeof n === 'object' && n !== null))];
+  };
+  const badgeText = (nodes) => nodes
+    .filter((n) => String(n.props?.className ?? '').includes('er-badge'))
+    .map((n) => {
+      const child = n.props?.children;
+      if (typeof child === 'string') return child;
+      if (Array.isArray(child)) return child.map((part) => (typeof part === 'string' ? part : '')).join('');
+      return '';
+    })
+    .join(' ');
+
+  const interrupted = await render({
+    tasks: [{ stage: 'SENTENCE_ANALYSIS', status: 'PENDING', progress: { sentences: 51, done: 3, failed: 8 } }],
+    running: false, open: false, failedCount: 8,
+  });
+  check('failed sentences make the band need attention', badgeText(interrupted).length > 0, badgeText(interrupted));
+  check('the badge does not claim there is nothing to do', !badgeText(interrupted).includes('0 '), badgeText(interrupted));
+
+  const clean = await render({
+    tasks: [{ stage: 'SENTENCE_ANALYSIS', status: 'SUCCEEDED', progress: { sentences: 51 } }],
+    running: false, open: false, failedCount: 0,
+  });
+  check('a clean run shows no attention badge', badgeText(clean).length === 0, badgeText(clean));
+}
+
 // Clicking the band's toggle must actually flip the state. The bug this guards
 // is subtle: the handler called `onToggle(expanded)` instead of `!expanded`, so
 // the parent stored the value it already had and the button did nothing.

@@ -120,7 +120,17 @@ function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onTo
   ));
   const expanded = open === null ? needsAttention : open;
 
-  const attentionCount = tasks.filter((task) => task.status === 'FAILED' || task.status === 'NEEDS_REVIEW').length;
+  // The badge counts what the learner can act on. A stage that failed or has
+  // sentences to review counts once; a stage whose sentences failed without
+  // the stage itself failing still counts, because its card carries the retry
+  // button. Without that, an article with eight failed sentences and no
+  // failed stage reported "0 项待处理".
+  const failedStages = tasks.filter((task) => task.status === 'FAILED' || task.status === 'NEEDS_REVIEW').length;
+  const sentenceStageFailed = failedCount > 0
+    && !tasks.some((task) => task.stage === 'SENTENCE_ANALYSIS' && (task.status === 'FAILED' || task.status === 'NEEDS_REVIEW'))
+    ? 1
+    : 0;
+  const attentionCount = failedStages + sentenceStageFailed;
   const label = task => STATUS_LABELS[task.status] ?? task.status;
 
   const bar = h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 } },
@@ -226,6 +236,8 @@ function StageDetailDialog({ t, stageId, tasks, sentences, onClose, onJump, onRe
       : null);
 
   return h(Dialog, {
+    // Long error text and raw JSON need horizontal room.
+    size: 'wide',
     title: `${stageName} · ${t('reader.stageDetail')}`,
     onClose,
     footer: status === 'FAILED'
@@ -508,7 +520,8 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
                 : null)),
           h(Button, {
             variant: 'ghost', iconOnly: true, children: t('common.delete'), onClick: removeArticle,
-          }, h(Icons.trash, null))),
+            icon: h(Icons.trash, null),
+          })),
         h('div', { className: 'er-pane-scroll' },
           sentences.length === 0
             ? h(Empty, { icon: h(Icons.bookOpen, null), title: t('reader.emptyBody'), description: t('reader.emptyBodyHint') })

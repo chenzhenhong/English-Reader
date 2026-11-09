@@ -109,7 +109,19 @@ function Tabs({ items, value, onChange, trailing, sticky = false }) {
 }
 
 /** Modal dialog with Escape handling and a scrim. */
-function Dialog({ title, onClose, children, footer }) {
+/**
+ * Modal dialog with a fixed header.
+ *
+ * The shell never scrolls: the body does. Scrolling the whole panel put the
+ * scrollbar against the rounded border — it read as a stray bar sitting
+ * outside the card — and it scrolled the title and the close button away
+ * along with the content.
+ *
+ * @param {object} props
+ * @param {'default'|'wide'} [props.size] `wide` for content that benefits from
+ *   horizontal room (diagnostics, long JSON).
+ */
+function Dialog({ title, onClose, children, footer, size = 'default' }) {
   React.useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') onClose();
@@ -119,13 +131,14 @@ function Dialog({ title, onClose, children, footer }) {
   }, [onClose]);
   return h('div', { className: 'er-scrim', onClick: onClose },
     h('div', {
-      className: 'er-modal', role: 'dialog', 'aria-modal': true, 'aria-label': title,
+      className: size === 'wide' ? 'er-modal er-modal--wide' : 'er-modal',
+      role: 'dialog', 'aria-modal': true, 'aria-label': title,
       onClick: (event) => event.stopPropagation(),
     },
     h('div', { className: 'er-modal-head' },
       h('div', { className: 'er-modal-title' }, title),
-      h(Button, { variant: 'ghost', iconOnly: true, onClick: onClose, children: 'Close' }, h(Icons.close, null))),
-    children,
+      h(Button, { variant: 'ghost', iconOnly: true, onClick: onClose, icon: h(Icons.close, null), children: 'Close' })),
+    h('div', { className: 'er-modal-body' }, children),
     footer && h('div', { className: 'er-modal-foot' }, footer)));
 }
 

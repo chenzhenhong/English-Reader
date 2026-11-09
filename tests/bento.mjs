@@ -271,5 +271,30 @@ if (plugin.__test && plugin.__test.SettingsPage) {
   check('pages compose through Board', (bundle.match(/h\(Board,/g) ?? []).length >= 3, String((bundle.match(/h\(Board,/g) ?? []).length));
 }
 
+console.log('\nicon-only buttons carry an icon');
+{
+  // `Button` renders the `icon` prop and drops its children when `iconOnly`
+  // is set. A call site that passed the icon as a child therefore rendered an
+  // empty button — the close button of the dialog, the delete buttons of the
+  // article list, and two more.
+  const sources = ['40-ui.js', '70-articles.js', '80-reader.js', '90-detail.js', '100-knowledge.js']
+    .map((file) => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'));
+  const offenders = [];
+  for (const source of sources) {
+    // An icon-only Button whose icon is a child rather than the `icon` prop.
+    // The props object and the children are siblings in `h(Button, {...}, kid)`,
+    // so both halves are matched together.
+    for (const match of source.matchAll(/h\(Button,\s*\{([\s\S]{0,500}?)\}\s*,\s*h\(/g)) {
+      const props = match[1];
+      if (!/iconOnly:\s*true/.test(props)) continue;
+      if (/\bicon:\s*h\(/.test(props)) continue;
+      offenders.push(props.replace(/\s+/g, ' ').slice(0, 90));
+    }
+  }
+  check('no icon-only button leaves its icon as a child', offenders.length === 0, offenders.join(' | '));
+  // The button itself must render the icon prop.
+  check('the button renders its icon prop', /iconOnly\s*\?\s*null\s*:\s*children/.test(bundle) && /icon\s*\?\?\s*null/.test(bundle));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

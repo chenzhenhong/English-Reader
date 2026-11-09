@@ -75,8 +75,9 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
       kind === 'word' && data.cefrLevel ? h(Badge, { tone: cefrTone(data.cefrLevel) }, data.cefrLevel) : null),
     h(Button, {
       size: 'sm', variant: 'ghost', iconOnly: true, children: t('common.favorite'),
+      icon: h('span', { style: { color: data.favorite ? 'var(--er-amber)' : undefined, display: 'grid' } }, h(Icons.star, { filled: data.favorite })),
       onClick: () => update({ favorite: !data.favorite }),
-    }, h('span', { style: { color: data.favorite ? 'var(--er-amber)' : undefined, display: 'grid' } }, h(Icons.star, { filled: data.favorite }))));
+    }));
 
   const meanings = kind === 'word' ? (data.meanings ?? []) : [];
   const meaningBlock = kind === 'word'

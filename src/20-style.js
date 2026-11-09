@@ -765,13 +765,38 @@ body[data-ds-dark-theme] .er-root {
 /* -------------------------------------------------------------------- modal */
 .er-scrim { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: var(--er-s-6); background: var(--dsw-alias-bg-mask-1); backdrop-filter: blur(4px); }
 .er-modal {
-  width: min(520px, 100%); max-height: 84vh; overflow: auto; display: flex; flex-direction: column; gap: var(--er-s-4);
-  padding: var(--er-s-5); border-radius: var(--er-r-xl);
+  /* Border-box: padding is part of the width, so a narrow window cannot push
+     the panel past the scrim (which put the close button off the card). */
+  box-sizing: border-box;
+  width: min(520px, 100%); max-height: 84vh;
+  display: flex; flex-direction: column;
+  /* The shell never scrolls; .er-modal-body does, inside the padding. */
+  overflow: hidden;
+  padding: 0; border-radius: var(--er-r-xl);
   background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--er-line); box-shadow: var(--er-lift-3);
 }
-.er-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--er-s-2); }
+/* Wide variant for diagnostics and long model output. */
+.er-modal--wide { width: min(820px, 100%); }
+.er-modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--er-s-2);
+  flex: none; padding: var(--er-s-5) var(--er-s-5) var(--er-s-3);
+}
 .er-modal-title { font-size: 14px; font-weight: 680; }
-.er-modal-foot { display: flex; justify-content: flex-end; gap: var(--er-s-2); }
+.er-modal-body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 0 var(--er-s-5) var(--er-s-5);
+  /* The scrollbar keeps its own lane, so content never shifts under it. */
+  scrollbar-gutter: stable;
+}
+.er-modal-body::-webkit-scrollbar { width: 8px; }
+.er-modal-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--er-ink-3) 30%, transparent);
+}
+.er-modal-foot {
+  display: flex; justify-content: flex-end; gap: var(--er-s-2);
+  flex: none; padding: var(--er-s-3) var(--er-s-5) var(--er-s-5);
+}
 .er-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 950; }
 
 /* ----------------------------------------------------------- raw diagnostics */
@@ -836,7 +861,7 @@ body[data-ds-dark-theme] .er-root {
 .er-stage .er-stage-failed-count { font-size: 10px; font-weight: 600; line-height: 13px; color: var(--dsw-alias-state-error-primary); }
 
 /* Stage detail dialog: codes, the reason, and the failing sentences. */
-.er-stage-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px var(--er-s-5) 16px; }
+.er-stage-detail { display: flex; flex-direction: column; gap: 12px; }
 .er-stage-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .er-stage-detail-codes { display: flex; flex-direction: column; gap: 8px; }
 .er-stage-detail-code { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

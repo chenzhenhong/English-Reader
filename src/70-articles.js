@@ -46,8 +46,9 @@ function ArticleRow({ t, article, onOpen, onAnalyze, onDelete, pending }) {
       }, article.status === 'COMPLETED' ? t('common.reanalyze') : t('articles.analyze')),
       h(Button, {
         size: 'sm', variant: 'ghost', iconOnly: true, children: t('common.delete'),
+        icon: h(Icons.trash, null),
         onClick: () => onDelete(article.id),
-      }, h(Icons.trash, null))));
+      })));
 }
 
 /** Library page with filters and the sample-library controls. */

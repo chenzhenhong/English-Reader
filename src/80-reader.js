@@ -169,8 +169,9 @@ function WordCard({ t, word, onFavorite, onMastery, onNote }) {
           h(Icons.plus, null), t('reader.addToLibrary'))),
       h(Button, {
         size: 'sm', variant: 'ghost', iconOnly: true, children: t('word.addPlan'),
+        icon: h(Icons.target, null),
         onClick: () => onMastery(word.id, Math.min(4, (word.masteryLevel ?? 0) + 1)),
-      }, h(Icons.target, null))),
+      })),
     h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
       (word.partOfSpeech ?? []).map((pos) => h(Badge, { key: pos, tone: 'soft' }, pos)),
       word.cefrLevel && h(Badge, { tone: cefrTone(word.cefrLevel) }, word.cefrLevel),
