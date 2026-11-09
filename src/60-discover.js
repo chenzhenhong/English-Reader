@@ -621,7 +621,18 @@ function CandidatePreview({ t, notify, candidate, onClose, onChanged }) {
           className: 'er-prose er-candidate-preview-body',
         },
           preview.text.split(/\n{2,}/).map((paragraph, index) => h('p', { key: index }, paragraph)))
-        : h('div', { style: { padding: '12px 0' } }, h(Skeleton, { height: 18, radius: 8 }), h(Skeleton, { height: 18, radius: 8 }), h(Skeleton, { height: 18, radius: 8 })));
+        // The fetch takes seconds. Show a label and a shimmering block, not a
+        // blank dialog the reader has to figure out.
+        : h('div', { className: 'er-candidate-loading' },
+          h('div', { className: 'er-card-sub', style: { marginBottom: 10 } }, t('discover.previewLoading')),
+          [0, 1, 2, 3, 4, 5].map((index) => h(Skeleton, {
+            key: index,
+            height: 14,
+            radius: 8,
+            // A shorter last line reads as a paragraph block rather than a
+            // six identical bars.
+            width: index === 5 ? '72%' : '100%',
+          }))));
 
   return h(Dialog, {
     title: candidate.title,

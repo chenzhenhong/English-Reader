@@ -160,7 +160,7 @@ const FEED_PAGE = 40;
  * The events arrive newest first and paged; the caller appends each page. When
  * the reader reaches the bottom, `onLoadMore` fetches the next one.
  */
-function ActivityFeed({ t, events, hasMore, loading, onLoadMore }) {
+function ActivityFeed({ t, events, hasMore, loading }) {
   const byDay = new Map();
   for (const event of events ?? []) {
     if (!byDay.has(event.day)) byDay.set(event.day, []);
@@ -225,10 +225,12 @@ function ActivityFeed({ t, events, hasMore, loading, onLoadMore }) {
       h('span', null, `${article.events} ${t('history.events')}`))),
   h('div', { className: 'er-feed-time' }, duration(t, article.seconds))))));
 
+  // No button: the feed loads when the reader reaches the bottom, so the
+  // only affordance is a line that says what is happening. Showing a button
+  // would suggest a second way to load that does not exist.
   const more = hasMore
     ? h('div', { className: 'er-more' },
-      h(Button, { variant: 'ghost', disabled: loading, onClick: onLoadMore },
-        loading ? t('common.working') : t('history.loadMore')))
+      loading ? h('span', { className: 'er-more--end' }, t('history.loading')) : null)
     : h('div', { className: 'er-more er-more--end' },
       t('history.listEnd'));
 
@@ -389,7 +391,6 @@ function StudyHistoryPage({ t, notify }) {
         events: feedEvents,
         hasMore: feedHasMore,
         loading: feedLoading,
-        onLoadMore: () => loadFeed(feedOffset.current + FEED_PAGE, false),
       }))));
 }
 

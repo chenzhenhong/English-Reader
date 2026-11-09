@@ -457,6 +457,12 @@ body[data-ds-dark-theme] .er-root {
 }
 .er-candidate-preview-body p { margin: 0 0 10px; }
 .er-candidate-preview-body p:last-child { margin-bottom: 0; }
+/* While the body is being fetched, the dialog shows a label and a shimmering
+   block rather than an empty space. */
+.er-candidate-loading { display: flex; flex-direction: column; gap: 10px; }
+.er-candidate-loading .er-skeleton { height: 14px; }
+/* Keep the dialog from collapsing to nothing while nothing has arrived. */
+.er-candidate-preview { min-height: 220px; }
 .er-candidate .er-thumb { width: 78px; height: 54px; border-radius: var(--er-r-sm); }
 .er-reasons { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
 

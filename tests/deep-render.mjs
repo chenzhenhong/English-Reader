@@ -1207,12 +1207,16 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
     && history.includes('loadFeed(0, true)'));
   check('the feed pages on scroll',
     /remaining < 160\) loadFeed/.test(history));
+  check('the feed has no load-more button',
+    !/h\(Button, \{ variant: 'ghost', disabled: loading, onClick: onLoadMore \}/.test(history));
+  check('the feed says what is happening while loading',
+    history.includes("t('history.loading')"));
   check('a new day filter resets the feed',
     /setFeedEvents\(\[\]\);\s*\n\s*setFeedHasMore\(false\)/.test(history));
   check('the filter is visible in the topbar', history.includes("t('history.onlyDay')"));
 
   const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
-  for (const key of ['history.onlyDay', 'history.clearDay', 'history.loadMore', 'history.listEnd']) {
+  for (const key of ['history.onlyDay', 'history.clearDay', 'history.loading', 'history.listEnd']) {
     check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
   }
 }
