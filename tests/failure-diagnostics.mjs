@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { createFacade } from '../lib/facade.js';
 import { ERROR_CODES } from '../lib/net.js';
-import { extractJson } from '../lib/llm.js';
+import { extractJson, validateStage } from '../lib/llm.js';
 
 let passed = 0;
 let failed = 0;
@@ -81,6 +81,66 @@ console.log('truncation is distinguishable from bad JSON');
   check('stage reports the dominant code', stage?.errorCode === ERROR_CODES.LLM_TRUNCATED, stage?.errorCode);
 }
 
+console.log('\nschema validation accepts a bare string where a list is required');
+{
+  // The model sometimes answers a list field with one bare string. Failing the
+  // whole stage over that would cost a retry for no reason.
+  const coerced = validateStage('SENTENCE_ANALYSIS', {
+    translation: { literal: 'a', natural: 'a' },
+    structure: { mainClause: 'a', components: [] },
+    grammarPoints: [],
+    keyExpressions: [],
+    difficultyNotes: '句子偏长。',
+    uncertaintyNotes: [],
+  });
+  check('a single string is wrapped in a list',
+    Array.isArray(coerced.difficultyNotes) && coerced.difficultyNotes.length === 1,
+    JSON.stringify(coerced.difficultyNotes));
+  check('the wrapped value is the string itself',
+    coerced.difficultyNotes[0] === '句子偏长。', coerced.difficultyNotes[0]);
+
+  check('a real list is left alone', validateStage('SENTENCE_ANALYSIS', {
+    translation: { literal: 'a', natural: 'a' },
+    structure: { mainClause: 'a', components: [] },
+    grammarPoints: [],
+    keyExpressions: [],
+    difficultyNotes: ['one', 'two'],
+    uncertaintyNotes: [],
+  }).difficultyNotes.length === 2);
+
+  check('an empty string is still an error', (() => {
+    try {
+      validateStage('SENTENCE_ANALYSIS', {
+        translation: { literal: 'a', natural: 'a' },
+        structure: { mainClause: 'a', components: [] },
+        grammarPoints: [],
+        keyExpressions: [],
+        difficultyNotes: '',
+        uncertaintyNotes: [],
+      });
+      return false;
+    } catch (error) {
+      return error.code === ERROR_CODES.SCHEMA_VALIDATION_FAILED;
+    }
+  })());
+
+  check('a non-list object is still an error', (() => {
+    try {
+      validateStage('SENTENCE_ANALYSIS', {
+        translation: { literal: 'a', natural: 'a' },
+        structure: { mainClause: 'a', components: [] },
+        grammarPoints: {},
+        keyExpressions: [],
+        difficultyNotes: [],
+        uncertaintyNotes: [],
+      });
+      return false;
+    } catch (error) {
+      return error.code === ERROR_CODES.SCHEMA_VALIDATION_FAILED;
+    }
+  })());
+}
+
 console.log('\nprose around JSON is reported with its cause');
 {
   try {
@@ -100,12 +160,23 @@ console.log('\nprose around JSON is reported with its cause');
   check('a second fragment is ignored', extractJson('{"a":1}{"b":2}').a === 1);
   check('braces inside strings are respected', extractJson('{"a":"}"} tail').a === '}');
   check('escaped quotes are respected', extractJson('{"a":"say \\"hi\\""} tail').a === 'say "hi"');
-  check('a really unclosed object still fails', (() => {
+  // An object that never closes was cut off, not malformed: the model would
+  // not leave a valid prefix without its brace. Reporting it as invalid JSON
+  // sends the learner to fix quotes when the real cause is a longer ask.
+  check('an unclosed object is reported as truncation', (() => {
     try {
       extractJson('{"a": {"b": 1}');
       return false;
     } catch (error) {
-      return error.code === ERROR_CODES.LLM_INVALID_JSON;
+      return error.code === ERROR_CODES.LLM_TRUNCATED;
+    }
+  })());
+  check('truncation keeps the raw output', (() => {
+    try {
+      extractJson('{"a": "x' + 'x'.repeat(5000));
+      return false;
+    } catch (error) {
+      return typeof error.rawOutput === 'string' && error.rawOutput.length > 0;
     }
   })());
 
