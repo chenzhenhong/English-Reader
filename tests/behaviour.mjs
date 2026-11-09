@@ -88,6 +88,12 @@ let detail = facade.getArticle(article.id);
 check('article reached a terminal status', ['COMPLETED', 'PARTIAL_COMPLETED', 'ANALYSIS_FAILED'].includes(detail.analysis.status), detail.analysis.status);
 check('segmentation stored every sentence', detail.sentences.length === segmentArticle(detail.body).sentences.length);
 check('sentence indices match segmentation order', detail.sentences.every((s, i) => s.sentenceIndex === i));
+// speakSentence resolves the text server-side and needs the article id. Without
+// it the RPC is called with `undefined` and the host reports the article as
+// missing even though it is the one open on screen.
+check('each sentence carries its article id',
+  detail.sentences.every((s) => s.articleId === article.id),
+  JSON.stringify(detail.sentences.map((s) => s.articleId)));
 
 // Duplicate detection by URL and by body.
 const body = 'A short but real article body. It has two sentences.';
