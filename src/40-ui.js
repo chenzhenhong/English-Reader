@@ -56,7 +56,8 @@ function Button({
   type = 'button', title, ariaLabel, ariaExpanded, testId,
 }) {
   const classes = ['er-btn', variant === 'primary' ? 'primary' : '', variant === 'ghost' ? 'ghost' : '',
-    size === 'sm' ? 'sm' : '', iconOnly ? 'icon' : '', wide ? 'wide' : ''].filter(Boolean).join(' ');
+    variant === 'danger' ? 'danger' : '', size === 'sm' ? 'sm' : '', iconOnly ? 'icon' : '',
+    wide ? 'wide' : ''].filter(Boolean).join(' ');
   return h('button', {
     type,
     className: classes,
@@ -183,4 +184,32 @@ function Progress({ ratio }) {
     h('span', { style: { width: `${Math.max(1, Math.round(ratio * 100))}%` } }));
 }
 
-export { h, Board, Cell, SPANS, Card, Badge, Button, Empty, Alert, Skeleton, Field, Tabs, Dialog, Thumb, Mastery, ProgressRing, Progress };
+/**
+ * A dialog that asks the learner to accept a destructive action.
+ *
+ * It states what will be lost before the button asks again, and cancelling
+ * is the default. Nothing here is generic — it exists so that destructive
+ * operations cannot be triggered by a stray click.
+ *
+ * This module has no translation function, so the labels are props with
+ * English defaults; callers pass the localised ones.
+ * @param {object} props
+ * @param {string} props.title what is about to happen.
+ * @param {ReactNode} props.description the consequences, in plain language.
+ * @param {() => void} props.onConfirm runs the action.
+ * @param {() => void} props.onCancel closes the dialog without acting.
+ * @param {boolean} [props.danger] false renders a neutral confirm button.
+ * @param {string} [props.confirmLabel]
+ * @param {string} [props.cancelLabel]
+ */
+function ConfirmDialog({ title, description, onConfirm, onCancel, danger = true, confirmLabel = 'Confirm', cancelLabel = 'Cancel' }) {
+  return h(Dialog, {
+    title,
+    onClose: onCancel,
+    footer: h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
+      h(Button, { variant: 'ghost', onClick: onCancel }, cancelLabel),
+      h(Button, { variant: danger ? 'danger' : 'primary', onClick: onConfirm }, confirmLabel)),
+  }, description);
+}
+
+export { h, Board, Cell, SPANS, Card, Badge, Button, Empty, Alert, Skeleton, Field, Tabs, Dialog, ConfirmDialog, Thumb, Mastery, ProgressRing, Progress };

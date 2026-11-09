@@ -379,7 +379,13 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
    * chrome in its body. Cleaning it changes every sentence offset, so the
    * analysis is dropped and the reader is told to run it again.
    */
-  const cleanBody = async () => {
+  // Which destructive action is waiting for a yes. The action itself runs
+  // only after the learner has read what it costs them.
+  const [confirm, setConfirm] = React.useState(null);
+
+  /** Run the body cleaner once the learner has accepted its cost. */
+  const confirmClean = async () => {
+    setConfirm(null);
     const result = await action.run(() => call('cleanArticle', { articleId }));
     if (!result) return;
     notify(t('reader.cleaned', {
@@ -388,7 +394,8 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
     }), 'ok');
     detail.reload();
   };
-  const removeArticle = async () => {
+  const confirmDelete = async () => {
+    setConfirm(null);
     const removed = await action.run(() => call('deleteArticle', { articleId }));
     if (removed) onBack();
   };
@@ -475,7 +482,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
         value: mode, onChange: setMode,
       }),
       h(Button, {
-        variant: 'ghost', icon: h(Icons.broom, null), disabled: action.pending || running, onClick: cleanBody,
+        variant: 'ghost', icon: h(Icons.broom, null), disabled: action.pending || running, onClick: () => setConfirm('clean'),
         title: t('reader.cleanHint'),
       }, t('reader.clean')),
       h(Button, {
@@ -519,7 +526,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
                 }, h(Icons.link, null), h('span', null, t('reader.openSource')))
                 : null)),
           h(Button, {
-            variant: 'ghost', iconOnly: true, children: t('common.delete'), onClick: removeArticle,
+            variant: 'ghost', iconOnly: true, children: t('common.delete'), onClick: () => setConfirm('delete'),
             icon: h(Icons.trash, null),
           })),
         h('div', { className: 'er-pane-scroll' },
@@ -550,6 +557,33 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
           jumpToSentence(index);
         },
         onRetry: retry,
+      })
+      : null,
+
+    // Both remaining actions change data the learner cannot recover. Each one
+    // states what it costs before asking again.
+    confirm === 'clean'
+      ? h(ConfirmDialog, {
+        title: t('reader.cleanConfirmTitle'),
+        description: h('div', { className: 'er-confirm-body' },
+          h('p', null, t('reader.cleanConfirm')),
+          h('p', { className: 'er-confirm-consequence' }, t('reader.cleanConfirmAnalysis'))),
+        confirmLabel: t('reader.cleanConfirmRun'),
+        cancelLabel: t('common.cancel'),
+        onConfirm: confirmClean,
+        onCancel: () => setConfirm(null),
+      })
+      : null,
+    confirm === 'delete'
+      ? h(ConfirmDialog, {
+        title: t('reader.deleteConfirmTitle'),
+        description: h('div', { className: 'er-confirm-body' },
+          h('p', null, t('reader.deleteConfirm', { title: article.title })),
+          h('p', { className: 'er-confirm-consequence' }, t('reader.deleteConfirmConsequence'))),
+        confirmLabel: t('reader.deleteConfirmRun'),
+        cancelLabel: t('common.cancel'),
+        onConfirm: confirmDelete,
+        onCancel: () => setConfirm(null),
       })
       : null,
 

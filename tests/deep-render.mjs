@@ -613,6 +613,31 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('a failed stage opens a dialog', source.includes('onInspect: setInspectStage'));
 }
 
+// Both remaining destructive actions must ask before acting, and say what
+// they cost. Otherwise a mis-click clears a whole analysis or removes an
+// article the learner was reading.
+{
+  const source = readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8');
+  check('the cleaner asks before acting', source.includes("onConfirm: confirmClean"), '');
+  check('cleaning states its cost', source.includes("t('reader.cleanConfirmAnalysis')"));
+  check('the cleaner does not run from the button alone', /onClick: \(\) => setConfirm\('clean'\)/.test(source));
+  check('deleting asks before acting', source.includes("onConfirm: confirmDelete"));
+  check('deleting states its cost', source.includes("t('reader.deleteConfirmConsequence')"));
+  check('deleting does not run from the button alone', /onClick: \(\) => setConfirm\('delete'\)/.test(source));
+  // The confirm handler must clear the state first, so the dialog cannot be
+  // re-triggered while the request is in flight.
+  check('confirming clears the pending action first', /setConfirm\(null\);\s*\n\s*const result = await action\.run\(\(\) => call\('cleanArticle'/.test(source));
+  // Both labels must exist in both languages.
+  const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
+  for (const key of ['reader.cleanConfirmTitle', 'reader.cleanConfirm', 'reader.cleanConfirmAnalysis',
+    'reader.cleanConfirmRun', 'reader.deleteConfirmTitle', 'reader.deleteConfirm',
+    'reader.deleteConfirmConsequence', 'reader.deleteConfirmRun']) {
+    check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
+  }
+  // The article title reaches the delete copy.
+  check('the delete copy receives the title', /t\('reader.deleteConfirm', \{ title: article\.title \}\)/.test(source));
+}
+
 // Mode ownership: split mode is per-sentence close reading, continuous mode is
 // whole-article reading with the analysis tabs. Neither may render both.
 {

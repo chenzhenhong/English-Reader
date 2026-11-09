@@ -358,6 +358,17 @@ body[data-ds-dark-theme] .er-root {
   box-shadow: 0 1px 1px color-mix(in srgb, var(--er-violet) 40%, transparent), 0 14px 26px -18px color-mix(in srgb, var(--er-violet) 78%, transparent);
 }
 .er-btn.primary:hover:not(:disabled) { background: linear-gradient(140deg, var(--er-blue) 0%, var(--er-violet) 58%, var(--er-violet-2) 96%); }
+/* The single button that should be hard to press. It sits in a confirm
+   dialog, never on a surface the learner navigates. */
+.er-btn.danger {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 34%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, var(--er-card));
+}
+.er-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, var(--er-card));
+}
+
 .er-btn.ghost { border-color: transparent; background: transparent; color: var(--er-ink-2); }
 .er-btn.ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--er-violet) 8%, transparent); border-color: transparent; }
 .er-btn.sm { height: 26px; padding: 0 9px; font-size: 11px; border-radius: var(--er-r-xs); }
@@ -861,6 +872,15 @@ body[data-ds-dark-theme] .er-root {
 .er-stage .er-stage-failed-count { font-size: 10px; font-weight: 600; line-height: 13px; color: var(--dsw-alias-state-error-primary); }
 
 /* Stage detail dialog: codes, the reason, and the failing sentences. */
+/* Confirmation dialog body: the consequence first, in plain language. */
+.er-confirm-body { display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; line-height: 19px; color: var(--er-ink-2); }
+.er-confirm-body p { margin: 0; word-break: break-word; }
+.er-confirm-consequence {
+  padding: 9px 11px; border-radius: var(--er-r-sm);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 22%, transparent);
+}
+
 .er-stage-detail { display: flex; flex-direction: column; gap: 12px; }
 .er-stage-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .er-stage-detail-codes { display: flex; flex-direction: column; gap: 8px; }
