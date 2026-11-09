@@ -821,6 +821,49 @@ body[data-ds-dark-theme] .er-root {
   .er-recent-row { grid-template-columns: minmax(0, 1fr); }
   .er-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .er-stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* A failed stage is clickable, so its whole surface is the hit target. */
+.er-stage[data-inspectable="true"] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, var(--er-line)); }
+.er-stage[data-inspectable="true"]:hover { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 5%, var(--er-card)); }
+.er-stage-hit {
+  display: flex; flex-direction: column; gap: 3px; width: 100%;
+  background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit;
+  text-align: left; cursor: pointer;
+}
+.er-stage-hit--static { cursor: default; }
+.er-stage-hit:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: var(--er-r-xs); }
+.er-stage[data-inspectable="true"] .er-stage-name { display: flex; align-items: center; gap: 4px; }
+.er-stage[data-inspectable="true"] .er-stage-name svg { width: 11px; height: 11px; opacity: .7; }
+
+/* Stage detail dialog: codes, the reason, and the failing sentences. */
+.er-stage-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px var(--er-s-5) 16px; }
+.er-stage-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.er-stage-detail-codes { display: flex; flex-direction: column; gap: 8px; }
+.er-stage-detail-code { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.er-stage-detail-meaning { font-size: 11.5px; color: var(--er-ink-2); }
+.er-stage-detail-msg {
+  font-size: 11.5px; line-height: 17px; color: var(--er-ink-2);
+  padding: 8px 10px; border-radius: var(--er-r-sm);
+  background: color-mix(in srgb, var(--er-ink-3) 8%, transparent);
+  word-break: break-word;
+}
+.er-stage-detail-list { display: flex; flex-direction: column; gap: 6px; }
+.er-stage-detail-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: var(--er-r-sm); border: 1px solid var(--er-line);
+  background: var(--er-card);
+}
+.er-stage-detail-text {
+  flex: 1; min-width: 0; font-size: 11.5px; line-height: 17px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.er-stage-detail-raw {
+  max-height: 160px; overflow: auto; font-size: 10.5px; line-height: 15px;
+  padding: 8px 10px; border-radius: var(--er-r-sm);
+  border: 1px solid var(--er-line);
+  background: color-mix(in srgb, var(--er-ink-3) 6%, transparent);
+  white-space: pre-wrap; word-break: break-word; color: var(--er-ink-2);
+}
   .er-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {

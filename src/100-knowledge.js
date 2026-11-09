@@ -516,7 +516,18 @@ function SettingsPage({ t, notify }) {
             h('div', { className: 'er-backup-item' },
               h('div', { className: 'er-backup-path er-mono' }, `${settings.dataDir ?? ''}/cache`),
               h('div', { className: 'er-set-row-desc' }, t('settings.backupCache')))),
-          h('div', { className: 'er-set-row-desc' }, t('settings.backupRestore')))),
+          h('div', { className: 'er-set-row-desc' }, t('settings.backupRestore'))),
+        h('div', { className: 'er-set-row' },
+          h('div', { className: 'er-set-row-text' },
+            h('div', { className: 'er-set-row-title' }, t('settings.knowledge')),
+            h('div', { className: 'er-set-row-desc' }, t('settings.knowledgeHint'))),
+          h(Button, { variant: 'ghost', onClick: async () => {
+            const result = await action.run(() => call('clearKnowledge'));
+            if (result) {
+              notify(t('settings.knowledgeCleared', { count: result.cleared }), 'ok');
+              data.reload();
+            }
+          } }, t('settings.knowledgeClear')))),
       h(Cell, { span: 12, eyebrow: t('settings.about'), icon: h(Icons.info, null) },
         h('div', { className: 'er-kv' }, h('div', { className: 'er-kv-value' }, t('settings.aboutBody'))),
         h('div', { className: 'er-kv', style: { marginTop: 8 } },

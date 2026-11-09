@@ -599,7 +599,7 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
     }
     if (end > 0) cells.push(source.slice(i, end + 1));
   }
-  for (const name of ['FailureSummary', 'NoteList']) {
+  for (const name of ['StageDetailDialog', 'NoteList']) {
     const wrapped = cells.some((body) => {
       const afterProps = body.slice(body.indexOf('},') + 2);
       return afterProps.includes(`h(${name},`);
@@ -607,6 +607,10 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
     check(`${name} is not wrapped in a second cell`, !wrapped);
     check(`${name} is still mounted`, source.includes(`h(${name},`));
   }
+  // The failure summary used to sit in the aside as a red panel; its detail
+  // now opens from the stage card instead.
+  check('no failure panel is rendered in the aside', !source.includes('h(FailureSummary,'));
+  check('a failed stage opens a dialog', source.includes('onInspect: setInspectStage'));
 }
 
 // Mode ownership: split mode is per-sentence close reading, continuous mode is

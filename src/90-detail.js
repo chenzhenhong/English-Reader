@@ -45,8 +45,18 @@ function stageCounter(stageId, progress) {
   return '';
 }
 
-/** Stage progress strip with a retry control on failed stages. */
-function AnalysisProgress({ t, tasks, onRetry, pending }) {
+/**
+ * Stage progress strip.
+ *
+ * A failed stage is a button, not a banner: its detail — the error code, the
+ * model's raw output and every failed sentence — belongs in a dialog the
+ * learner opens on demand, not in a red panel that takes a whole column away
+ * from the article they are reading. A stage that did not fail stays plain
+ * text, so nothing suggests it is clickable.
+ * @param {object} props
+ * @param {(stageId: string) => void} props.onInspect opens the stage's detail.
+ */
+function AnalysisProgress({ t, tasks, onRetry, pending, onInspect }) {
   const cells = STAGES_ORDER.map((stage) => {
     const task = tasks.find((item) => item.stage === stage.id);
     const status = task?.status ?? 'PENDING';
@@ -54,10 +64,24 @@ function AnalysisProgress({ t, tasks, onRetry, pending }) {
     const review = stage.id === 'SENTENCE_ANALYSIS' && (task?.progress?.needsReview ?? 0) > 0
       ? ` · ${t('reader.needsReviewCount')} ${task.progress.needsReview}`
       : '';
-    return h('div', { key: stage.id, className: 'er-stage', 'data-status': status },
-      h('div', { className: 'er-stage-name' }, t(stage.labelKey, { fallback: stage.id })),
-      h('div', { className: 'er-stage-hint' }, t(stage.hintKey, { fallback: '' })),
-      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`),
+    // A failed stage, or one with sentences to review, has detail worth opening.
+    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW';
+    const body = h(React.Fragment, null,
+      h('div', { className: 'er-stage-name' }, t(stage.labelKey, { fallback: stage.id }),
+        inspectable ? h(Icons.chevron, { dir: 'right' }) : null),
+      h('div', { className: 'er-stage-hint' }, t(stage.hintKey, { fallback: '' }),
+        // The status line is where the count lives, so it stays last.
+      ),
+      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`));
+    return h('div', { key: stage.id, className: 'er-stage', 'data-status': status, 'data-inspectable': inspectable },
+      inspectable
+        ? h('button', {
+          type: 'button',
+          className: 'er-stage-hit',
+          'aria-label': `${t(stage.labelKey, { fallback: stage.id })} · ${t('reader.inspectStage')}`,
+          onClick: () => onInspect(stage.id),
+        }, body)
+        : h('div', { className: 'er-stage-hit er-stage-hit--static' }, body),
       status === 'FAILED'
         ? h(Button, { size: 'sm', variant: 'ghost', disabled: pending, onClick: () => onRetry(stage.id) }, t('common.retry'))
         : null);
@@ -75,7 +99,7 @@ function AnalysisProgress({ t, tasks, onRetry, pending }) {
  * @param {object} props
  * @param {boolean|null} props.open null = follow the automatic rule.
  */
-function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onToggle }) {
+function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onToggle, onInspect }) {
   const needsAttention = running || tasks.some((task) => (
     task.status === 'FAILED' || task.status === 'NEEDS_REVIEW'
   ));
@@ -115,41 +139,84 @@ function Band({ t, ratio, position, tasks, running, onRetry, pending, open, onTo
     bar,
     expanded
       ? h(React.Fragment, null,
-        h(AnalysisProgress, { t, tasks, onRetry, pending }),
+        h(AnalysisProgress, { t, tasks, onRetry, pending, onInspect }),
         running ? h(Alert, { tone: 'warn' }, t('reader.analysisRunning')) : null)
       : null));
 }
 
-/** Aggregate view of failed sentences with their codes and one-click jumps. */
-function FailureSummary({ t, sentences, tasks, onJump, onRetryAll }) {
-  const failed = sentences.filter((item) => item.analysisStatus === 'failed');
-  if (failed.length === 0) return null;
+/**
+ * Detail dialog for one stage.
+ *
+ * Opened when the learner clicks a failed (or review-flagged) stage card. It
+ * lists the error codes with their meanings, the model's raw output when there
+ * is one, and — for the sentence stage — every failed sentence with a jump
+ * button, so the reader can go straight to it and retry.
+ *
+ * The page itself stays clean: a red summary panel used to sit in the aside
+ * and push the article aside even when the learner only wanted to read.
+ */
+function StageDetailDialog({ t, stageId, tasks, sentences, onClose, onJump, onRetry }) {
+  const stage = STAGES_ORDER.find((item) => item.id === stageId);
+  const task = tasks.find((item) => item.stage === stageId);
+  const status = task?.status ?? 'PENDING';
+  const stageName = stage ? t(stage.labelKey, { fallback: stageId }) : stageId;
+
+  // Only the sentence stage fails per item; the others fail as a whole stage.
+  const failed = stageId === 'SENTENCE_ANALYSIS'
+    ? sentences.filter((item) => item.analysisStatus === 'failed')
+    : [];
   const codes = new Map();
-  for (const item of failed) {
-    const code = item.error?.code ?? 'LLM_UNAVAILABLE';
-    codes.set(code, (codes.get(code) ?? 0) + 1);
+  if (failed.length > 0) {
+    for (const item of failed) {
+      const code = item.error?.code ?? 'LLM_UNAVAILABLE';
+      codes.set(code, (codes.get(code) ?? 0) + 1);
+    }
+  } else if (task?.errorCode) {
+    codes.set(task.errorCode, 1);
   }
-  const stage = tasks.find((task) => task.stage === 'SENTENCE_ANALYSIS');
-  return h(Cell, { span: 12, eyebrow: `${t('reader.failureSummary')} · ${failed.length}`, icon: h(Icons.warning, null) },
-    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-        [...codes.entries()].map(([code, count]) => h('span', { key: code, style: { display: 'flex', gap: 4, alignItems: 'center' } },
+  const counter = stageCounter(stageId, task?.progress);
+  const review = stageId === 'SENTENCE_ANALYSIS' && (task?.progress?.needsReview ?? 0) > 0
+    ? ` · ${t('reader.needsReviewCount')} ${task.progress.needsReview}`
+    : '';
+
+  const rawOutput = failed.find((item) => typeof item.error?.raw === 'string' && item.error.raw.length > 0)?.error.raw ?? null;
+
+  const body = h('div', { className: 'er-stage-detail' },
+    h('div', { className: 'er-stage-detail-head' },
+      h(Badge, { tone: status === 'FAILED' ? 'pink' : 'amber' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`),
+      h('div', { className: 'er-stage-hint' }, t(stage?.hintKey ?? '', { fallback: '' }))),
+    codes.size > 0
+      ? h('div', { className: 'er-stage-detail-codes' },
+        [...codes.entries()].map(([code, count]) => h('div', { key: code, className: 'er-stage-detail-code' },
           h(Badge, { tone: 'pink' }, `${code} × ${count}`),
-          h('span', { className: 'er-meaning-ctx' }, t(`error.${code}`, { fallback: t('error.unknown') }))))) ,
-      stage?.errorMessage ? h('div', { className: 'er-card-sub' }, stage.errorMessage) : null,
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-        failed.map((item) => h('div', {
-          key: item.sentenceIndex,
-          style: { display: 'flex', alignItems: 'center', gap: 8 },
-        },
-        h('span', { className: 'er-badge plain' }, `#${item.sentenceIndex + 1}`),
-        h('span', {
-          className: 'er-kv-value',
-          style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-        }, item.text),
-        h('span', { className: 'er-meaning-ctx' }, item.error?.message ?? ''),
-        h(Button, { size: 'sm', variant: 'ghost', onClick: () => onJump(item.sentenceIndex) }, t('reader.jumpToSentence')))),
-        )));
+          h('div', { className: 'er-stage-detail-meaning' }, t(`error.${code}`, { fallback: t('error.unknown') })))))
+      : null,
+    task?.errorMessage
+      ? h('div', { className: 'er-stage-detail-msg' }, task.errorMessage)
+      : null,
+    // A per-sentence failure usually says the same thing as the stage; only
+    // show it when it adds a specific reason.
+    failed.length > 0
+      ? h('div', { className: 'er-stage-detail-list' },
+        failed.map((item) => h('div', { key: item.sentenceIndex, className: 'er-stage-detail-row' },
+          h('span', { className: 'er-badge plain' }, `#${item.sentenceIndex + 1}`),
+          h('span', { className: 'er-stage-detail-text' }, item.text),
+          item.error?.message ? h('span', { className: 'er-meaning-ctx' }, item.error.message) : null,
+          h(Button, { size: 'sm', variant: 'ghost', onClick: () => onJump(item.sentenceIndex) }, t('reader.jumpToSentence')))))
+      : null,
+    // The model's raw output is the fastest way to tell a truncation from a
+    // refusal; it is stored per sentence, so show the first one there is.
+    rawOutput
+      ? h('div', { className: 'er-stage-detail-raw er-mono' }, rawOutput)
+      : null);
+
+  return h(Dialog, {
+    title: `${stageName} · ${t('reader.stageDetail')}`,
+    onClose,
+    footer: status === 'FAILED'
+      ? h(Button, { disabled: false, onClick: () => { onRetry(stageId); onClose(); } }, t('common.retry'))
+      : null,
+  }, body);
 }
 
 /** Note list for the article, above the reader. */
@@ -176,6 +243,8 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
   // successful analysis collapses to a single progress line, and the reader gets
   // the height back. The learner can always open it to inspect the detail.
   const [bandOpen, setBandOpen] = React.useState(null);
+  // Which stage's detail dialog is open, or null when none is.
+  const [inspectStage, setInspectStage] = React.useState(null);
   const [noteDraft, setNoteDraft] = React.useState('');
   const action = useAction();
   const words = React.useMemo(() => (detail.data ? wordIndex(detail.data) : new Map()), [detail.data]);
@@ -392,6 +461,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
       pending: action.pending,
       open: bandOpen,
       onToggle: setBandOpen,
+      onInspect: setInspectStage,
     }),
 
     h('div', { className: 'er-reader er-reader--fill' },
@@ -428,14 +498,27 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
       mode === 'split'
         ? h('aside', { className: 'er-side' },
           // Both children render their own cell, or nothing at all.
-          h(FailureSummary, { t, sentences, tasks: data.tasks, onJump: jumpToSentence, onRetryAll: () => retry('SENTENCE_ANALYSIS') }),
           sentencePanel,
           h(NoteList, { t, notes: data.notes }))
         : h('aside', { className: 'er-side' },
-          h(FailureSummary, { t, sentences, tasks: data.tasks, onJump: jumpToSentence, onRetryAll: () => retry('SENTENCE_ANALYSIS') }),
           insightPanel,
           h(NoteList, { t, notes: data.notes }))),
 
+
+    inspectStage
+      ? h(StageDetailDialog, {
+        t,
+        stageId: inspectStage,
+        tasks: data.tasks,
+        sentences,
+        onClose: () => setInspectStage(null),
+        onJump: (index) => {
+          setInspectStage(null);
+          jumpToSentence(index);
+        },
+        onRetry: retry,
+      })
+      : null,
 
     drawerWord
       ? h(Dialog, {
