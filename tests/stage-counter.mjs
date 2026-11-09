@@ -113,6 +113,12 @@ console.log('\nrendered strip');
   check('a pending stage with failed sentences opens its detail', openableText.includes('er-stage-hit'), openableText.slice(0, 300));
   check('the failed sentence count is shown', openableText.includes('er-stage-failed-count'));
   check('the stage is marked inspectable', openableText.includes('"data-inspectable":true'));
+
+  // The same run is stored as PENDING so it stays retryable. Its partial
+  // results are on screen, so the card must not claim it never started, and
+  // the learner must be able to run it again.
+  check('a started-then-stopped stage reads as interrupted', openableText.includes('INTERRUPTED'), openableText.slice(0, 200));
+  check('an interrupted stage is retryable', openableText.includes('common.retry'));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

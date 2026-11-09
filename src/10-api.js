@@ -90,6 +90,10 @@ function cefrTone(level) {
 /** Human label for a stage status. */
 const STATUS_LABELS = {
   PENDING: '待执行',
+  // A stage that started, stopped part-way and has not been retried. It is
+  // stored as PENDING so it stays retryable, but "待执行" would claim it never
+  // ran while its partial results are already on screen.
+  INTERRUPTED: '已中断',
   RUNNING: '进行中',
   SUCCEEDED: '已完成',
   NEEDS_REVIEW: '待复核',

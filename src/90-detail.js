@@ -68,7 +68,13 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect, failedCount }
     // early leaves the task at PENDING while individual sentences are marked
     // failed. Its detail is worth opening whenever either says so.
     const sentenceFailures = stage.id === 'SENTENCE_ANALYSIS' && failedCount > 0;
-    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW' || sentenceFailures;
+    // A run that stopped part-way leaves the stage PENDING so it stays
+    // retryable, but it did start: its partial results are already on screen.
+    // Calling that "待执行" is wrong, and it hides the retry button.
+    const started = Number(task?.progress?.done ?? 0) > 0 || Number(task?.progress?.failed ?? 0) > 0;
+    const interrupted = status === 'PENDING' && started;
+    const shownStatus = interrupted ? 'INTERRUPTED' : status;
+    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW' || interrupted || sentenceFailures;
     // A stage that has detail but did not itself fail still needs to say how
     // many sentences went wrong, or the card looks successful.
     const failedBadge = sentenceFailures
@@ -80,9 +86,9 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect, failedCount }
       h('div', { className: 'er-stage-hint' }, t(stage.hintKey, { fallback: '' }),
         // The status line is where the count lives, so it stays last.
       ),
-      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[status] ?? status}${counter}${review}`),
+      h('div', { className: 'er-stage-status' }, `${STATUS_LABELS[shownStatus] ?? shownStatus}${counter}${review}`),
       failedBadge);
-    return h('div', { key: stage.id, className: 'er-stage', 'data-status': status, 'data-inspectable': inspectable },
+    return h('div', { key: stage.id, className: 'er-stage', 'data-status': shownStatus, 'data-inspectable': inspectable },
       inspectable
         ? h('button', {
           type: 'button',
@@ -91,7 +97,7 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect, failedCount }
           onClick: () => onInspect(stage.id),
         }, body)
         : h('div', { className: 'er-stage-hit er-stage-hit--static' }, body),
-      status === 'FAILED'
+      status === 'FAILED' || interrupted
         ? h(Button, { size: 'sm', variant: 'ghost', disabled: pending, onClick: () => onRetry(stage.id) }, t('common.retry'))
         : null);
   });
@@ -417,21 +423,25 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
     // Header (title + sentence + add button) is part of the fixed frame; only
     // the analysis below it scrolls.
     pane.head,
+    // The note composer travels with the analysis instead of pinning itself to
+    // the panel bottom: a fixed footer reserved height for a field the reader
+    // may never use, and the analysis had to shrink to fit around it. It now
+    // arrives at the end of the scroll, where a note naturally belongs.
     h('div', { className: 'er-side-scroll', style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-      pane.body),
-    activeSentence
-      ? h('div', { style: { borderTop: '1px dashed var(--er-line)', paddingTop: 12 } },
-        h('div', { className: 'er-kv-label', style: { marginBottom: 6 } }, t('reader.noteForSentence')),
-        h('textarea', {
-          className: 'er-textarea', style: { minHeight: 74, fontSize: 12 },
-          value: noteDraft, placeholder: t('reader.notePlaceholder'),
-          onChange: (event) => setNoteDraft(event.target.value),
-        }),
-        h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 6 } },
-          h(Button, {
-            size: 'sm', disabled: action.pending || noteDraft.trim().length === 0, onClick: addNote,
-          }, t('reader.saveNote'))))
-      : null);
+      pane.body,
+      activeSentence
+        ? h('div', { className: 'er-note-compose' },
+          h('div', { className: 'er-kv-label', style: { marginBottom: 6 } }, t('reader.noteForSentence')),
+          h('textarea', {
+            className: 'er-textarea', style: { minHeight: 74, fontSize: 12 },
+            value: noteDraft, placeholder: t('reader.notePlaceholder'),
+            onChange: (event) => setNoteDraft(event.target.value),
+          }),
+          h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 6 } },
+            h(Button, {
+              size: 'sm', disabled: action.pending || noteDraft.trim().length === 0, onClick: addNote,
+            }, t('reader.saveNote'))))
+        : null));
 
   const insightPanel = h(ArticleInsights, {
     onAddToLibrary: (kind, id, next) => setInLibrary(kind, id, next),

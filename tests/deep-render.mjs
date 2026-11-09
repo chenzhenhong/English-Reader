@@ -773,12 +773,16 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('SentencePane returns a head and a body', /return \{\s*head,/.test(reader));
   // The head is rendered before the scroller opens.
   const panelStart = source.indexOf("className: 'er-cell er-side-card'");
-  const panelSource = source.slice(panelStart, panelStart + 900);
+  const panelSource = source.slice(panelStart, panelStart + 2000);
   const headAt = panelSource.indexOf('pane.head');
   const scrollAt = panelSource.indexOf('er-side-scroll');
   check('the pane head is placed before the scroller', headAt >= 0 && headAt < scrollAt,
     `head=${headAt} scroll=${scrollAt}`);
-  check('the pane body is placed inside the scroller', /er-side-scroll[\s\S]{0,120}pane\.body/.test(panelSource));
+  check('the pane body is placed inside the scroller', /er-side-scroll[\s\S]{0,200}pane\.body/.test(panelSource));
+  // The note composer must travel with the analysis, not pin itself to the
+  // panel bottom: a fixed footer reserved height the reader may never use.
+  check('the note composer sits inside the scroller',
+    /er-side-scroll[\s\S]{0,2000}er-note-compose/.test(panelSource));
 }
 
 // The progress band collapses when every stage succeeded, and expands when a

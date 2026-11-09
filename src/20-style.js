@@ -612,6 +612,12 @@ body[data-ds-dark-theme] .er-root {
 .er-side-title svg { width: 14px; height: 14px; color: var(--er-violet); }
 .er-sentence-head { font-size: 13px; line-height: 21px; font-weight: 620; padding-bottom: var(--er-s-2); border-bottom: 1px solid var(--er-line); }
 
+/* The note composer ends the panel body instead of pinning to its bottom. */
+.er-note-compose {
+  margin-top: 2px; padding-top: 12px;
+  border-top: 1px dashed var(--er-line);
+}
+
 .er-kv { display: flex; flex-direction: column; gap: 3px; }
 .er-kv-label { font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--er-ink-3); }
 .er-kv-value { font-size: 12px; line-height: 19px; color: var(--er-ink-2); }
@@ -807,20 +813,10 @@ body[data-ds-dark-theme] .er-root {
 .er-stage[data-status="RUNNING"] .er-stage-status { color: var(--er-blue); }
 .er-stage[data-status="FAILED"] .er-stage-status { color: var(--dsw-alias-state-error-primary); }
 .er-stage[data-status="NEEDS_REVIEW"] .er-stage-status { color: var(--er-amber); }
+.er-stage[data-status="INTERRUPTED"] .er-stage-status { color: var(--er-amber); }
+.er-stage[data-status="INTERRUPTED"] { border-color: color-mix(in srgb, var(--er-amber) 38%, var(--er-line)); }
 
 .er-recent-row { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: var(--er-s-3); align-items: stretch; }
-
-/* ------------------------------------------------------------- responsive */
-@media (max-width: 1180px) {
-  .er-board { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .er-span-8 { grid-column: span 6; }
-  .er-span-6 { grid-column: span 3; }
-  .er-span-4 { grid-column: span 3; }
-  .er-span-3 { grid-column: span 2; }
-  .er-reader { grid-template-columns: minmax(0, 1fr); }
-  .er-recent-row { grid-template-columns: minmax(0, 1fr); }
-  .er-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .er-stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* A failed stage is clickable, so its whole surface is the hit target. */
 .er-stage[data-inspectable="true"] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, var(--er-line)); }
@@ -834,8 +830,10 @@ body[data-ds-dark-theme] .er-root {
 .er-stage-hit:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; border-radius: var(--er-r-xs); }
 .er-stage[data-inspectable="true"] .er-stage-name { display: flex; align-items: center; gap: 4px; }
 .er-stage[data-inspectable="true"] .er-stage-name svg { width: 11px; height: 11px; opacity: .7; }
-/* "3 句失败": the stage itself may not fail when only some sentences did. */
-.er-stage-failed-count { font-size: 10px; color: var(--dsw-alias-state-error-primary); }
+/* "8 句失败": the stage itself may not fail when only some sentences did.
+   It sits inside the stage's hit target, so it inherits the browser's form
+   font unless it is given the stage's own type scale. */
+.er-stage .er-stage-failed-count { font-size: 10px; font-weight: 600; line-height: 13px; color: var(--dsw-alias-state-error-primary); }
 
 /* Stage detail dialog: codes, the reason, and the failing sentences. */
 .er-stage-detail { display: flex; flex-direction: column; gap: 12px; padding: 14px var(--er-s-5) 16px; }
@@ -866,6 +864,19 @@ body[data-ds-dark-theme] .er-root {
   background: color-mix(in srgb, var(--er-ink-3) 6%, transparent);
   white-space: pre-wrap; word-break: break-word; color: var(--er-ink-2);
 }
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 1180px) {
+  .er-board { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .er-span-8 { grid-column: span 6; }
+  .er-span-6 { grid-column: span 3; }
+  .er-span-4 { grid-column: span 3; }
+  .er-span-3 { grid-column: span 2; }
+  .er-reader { grid-template-columns: minmax(0, 1fr); }
+  .er-recent-row { grid-template-columns: minmax(0, 1fr); }
+  .er-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .er-stage-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
   .er-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
