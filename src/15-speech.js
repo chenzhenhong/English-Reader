@@ -10,6 +10,15 @@
 /** Currently playing clip; a new request replaces it. */
 let activeAudio = null;
 let activeUrl = null;
+/**
+ * Whether the current clip's `play()` has settled.
+ *
+ * `stopSpeech()` must not touch the audio while `play()` is pending: clearing
+ * the media then makes the promise reject with "The play() request was
+ * interrupted because the media was removed from the document", which the
+ * button reports as a failure even though the clip plays.
+ */
+let playSettled = false;
 /** Voice/rate preferences persist per browser. */
 const SPEECH_PREFS_KEY = 'english-reader:speech';
 
@@ -42,12 +51,17 @@ function saveSpeechPrefs(next) {
 /** Stop the active clip and release its object URL. */
 function stopSpeech() {
   if (activeAudio !== null) {
-    try {
-      activeAudio.pause();
-      activeAudio.src = '';
-    } catch {
-      /* already torn down */
+    if (playSettled) {
+      // The clip is playing: pause it. Clearing `src` here would also work,
+      // but `pause()` alone leaves the element intact for the `ended` event.
+      try {
+        activeAudio.pause();
+      } catch {
+        /* already torn down */
+      }
     }
+    // When `play()` is still pending, leave the audio alone: it settles on
+    // its own and the promise resolves or rejects without being interrupted.
     activeAudio = null;
   }
   if (activeUrl !== null) {
@@ -58,6 +72,7 @@ function stopSpeech() {
     }
     activeUrl = null;
   }
+  playSettled = false;
 }
 
 /**
@@ -106,14 +121,17 @@ async function speakText(text, options = {}) {
   activeUrl = URL.createObjectURL(blob);
   const audio = new Audio(activeUrl);
   activeAudio = audio;
+  playSettled = false;
   audio.addEventListener('ended', () => {
     if (activeAudio === audio) stopSpeech();
   });
   try {
     await audio.play();
   } catch (error) {
+    playSettled = true;
     return { played: false, code: 'SPEECH_BLOCKED', message: `浏览器阻止了播放（${error.message}）` };
   }
+  playSettled = true;
   return { played: true, bytes: payload.value.bytes, cached: payload.value.cached === true };
 }
 
@@ -140,10 +158,17 @@ async function speakSentence(articleId, sentenceIndex, options = {}) {
     activeUrl = URL.createObjectURL(new Blob([bytes], { type: payload.value.mime ?? 'audio/mpeg' }));
     const audio = new Audio(activeUrl);
     activeAudio = audio;
+    playSettled = false;
     audio.addEventListener('ended', () => {
       if (activeAudio === audio) stopSpeech();
     });
-    await audio.play();
+    try {
+      await audio.play();
+    } catch (error) {
+      playSettled = true;
+      throw error;
+    }
+    playSettled = true;
     return { played: true, bytes: payload.value.bytes };
   } catch (error) {
     return { played: false, code: 'SPEECH_FAILED', message: `朗读失败（${error.message}）` };

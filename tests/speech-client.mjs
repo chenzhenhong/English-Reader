@@ -19,7 +19,7 @@ const check = (label, ok, detail) => {
 const bundle = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8');
 
 /** A fresh browser sandbox with the speech module exposed by the bundle factory. */
-function loadClient() {
+function loadClient(audioClass) {
   let registration;
   const sandbox = {
     window: {
@@ -38,7 +38,7 @@ function loadClient() {
       constructor(parts) { this.parts = parts; }
     },
     URL: { createObjectURL: () => 'blob:clip', revokeObjectURL() {} },
-    Audio: class Audio {
+    Audio: audioClass ?? class Audio {
       constructor(src) { this.src = src; this.paused = false; this.listeners = {}; }
       addEventListener(name, fn) { this.listeners[name] = fn; }
       play() { return Promise.resolve(); }
@@ -143,6 +143,41 @@ console.log('\nfailure mapping');
   const result = await speech.speakText('   ');
   check('empty text is refused locally', result.played === false && result.code === 'SPEECH_EMPTY', JSON.stringify(result));
   check('empty text makes no request', calls === 1, String(calls));
+}
+
+console.log('\nstopSpeech while play() is pending');
+{
+  // When a second speech request arrives while the first clip's play() is
+  // still pending, stopSpeech() must not clear the media: that makes the
+  // play() promise reject with "The play() request was interrupted because
+  // the media was removed from the document", which the button reports as a
+  // failure even though the clip plays.
+  let pendingPlay = null;
+  let createdAudio = null;
+  const ControlledAudio = class {
+    constructor(src) { this.src = src; this.paused = false; this.listeners = {}; createdAudio = this; }
+    addEventListener(name, fn) { this.listeners[name] = fn; }
+    play() { pendingPlay = new Promise((resolve, reject) => { this._resolve = resolve; this._reject = reject; }); return pendingPlay; }
+    pause() { this.paused = true; }
+  };
+  const { speech } = loadClient(ControlledAudio);
+  globalThis.__fetch = async () => nextResponse();
+
+  // Start a request whose play() never settles until we let it.
+  const inFlight = speech.speakText('A sentence whose play promise stays pending.');
+  // Let the fetch resolve and play() be called.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  check('an audio element was created', createdAudio !== null);
+
+  // stopSpeech() while play() is pending must not touch the media.
+  speech.stopSpeech();
+  check('the clip is not paused while play() is pending', createdAudio.paused === false, String(createdAudio.paused));
+
+  // Let play() settle — the clip should report success, not a failure.
+  createdAudio._resolve();
+  const result = await inFlight;
+  check('playback reports success after the interrupt', result.played === true, JSON.stringify(result));
+  check('no failure code is reported', result.code === undefined, String(result.code));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
