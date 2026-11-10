@@ -31,6 +31,25 @@ const sentences = splitSentences(paragraphText);
 check('abbreviations do not split sentences', sentences.length === 3, `got ${sentences.length}: ${sentences.map((s) => s.text).join(' | ')}`);
 check('decimal inside a sentence stays intact', sentences[1].text.includes('3.5'), sentences[1].text);
 
+// A title before a name is not a sentence end: "Sen. Cindy Hyde-Smith" is one
+// person, and splitting there leaves a fragment the analyser would choke on.
+const titledText = 'The margin between incumbent Republican Sen. Cindy Hyde-Smith and challenger Scott Colom is narrow. Gov. Kate Brown signed the bill.';
+const titledSentences = splitSentences(titledText);
+check(
+  'title abbreviations do not split sentences',
+  titledSentences.length === 2,
+  `got ${titledSentences.length}: ${titledSentences.map((s) => s.text).join(' | ')}`,
+);
+check(
+  'the title stays attached to its name',
+  titledSentences[0].text.startsWith('The margin between incumbent Republican Sen. Cindy Hyde-Smith'),
+  titledSentences[0].text,
+);
+check(
+  'a plain sentence still splits',
+  splitSentences('The vote was close. She won the seat.').length === 2,
+);
+
 const segment = segmentArticle(paragraphText);
 check('offsets address the stored body', segment.sentences.every((s) => paragraphText.slice(s.startOffset, s.endOffset) === s.text));
 check('paragraph indices are ascending', segment.paragraphs.every((p, i) => p.index === i));

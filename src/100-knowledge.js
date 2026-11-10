@@ -4,12 +4,18 @@ const KIND_LABELS = { word: '单词', phrase: '短语', collocation: '搭配', s
 const MASTERY_LABELS = ['未学习', '初次接触', '认识', '基本掌握', '熟练掌握'];
 
 /** One knowledge card in the library grid. */
-function KnowledgeCard({ t, item, onOpen, onFavorite }) {
+function KnowledgeCard({ t, item, onOpen, onDelete }) {
+  // A word's card shows the dictionary meaning, not the meaning this article
+  // gave it: the context meaning belongs to the reader, not to the library.
   const detailText = Array.isArray(item.detail)
-    ? item.detail.map((entry) => entry.contextMeaning ?? entry.meaning ?? '').filter(Boolean).join('；')
+    ? item.detail.map((entry) => entry.meaning ?? entry.contextMeaning ?? '').filter(Boolean).join('；')
     : (typeof item.detail === 'string' ? item.detail : '') || (item.meaning ?? '');
+  // A sentence is a clause, not a headword: it must wrap across lines instead
+  // of being squeezed into the single-line word row, and it needs no label.
+  const isSentence = item.kind === 'sentence';
   return h('div', {
-    className: 'er-kcard', role: 'button', tabIndex: 0,
+    className: isSentence ? 'er-kcard er-kcard--sentence' : 'er-kcard',
+    role: 'button', tabIndex: 0,
     onClick: () => onOpen(item.id),
     onKeyDown: (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -19,17 +25,21 @@ function KnowledgeCard({ t, item, onOpen, onFavorite }) {
     },
   },
   h('div', { className: 'er-kcard-top' },
+    // A sentence is a clause, but it is still the card's headword: bold like a
+    // word, and on the same line as the delete control. A long clause wraps
+    // inside its own span instead of pushing the control to a new line.
     h('span', { className: 'er-kcard-word' }, item.expression),
-    item.phonetic ? h('span', { className: 'er-phonetic' }, item.phonetic) : null,
+    !isSentence && item.phonetic ? h('span', { className: 'er-phonetic' }, item.phonetic) : null,
     h('div', { className: 'er-topbar-spacer' }),
+    // The card's only action is removal: a learner who wants an entry back can
+    // find it in an article, but the library has no separate "favourite" step.
     h('button', {
-      type: 'button', className: 'er-btn ghost icon sm', 'aria-label': t('common.favorite'),
-      style: { color: item.favorite ? 'var(--er-amber)' : undefined },
+      type: 'button', className: 'er-btn ghost icon sm', 'aria-label': t('common.delete'),
       onClick: (event) => {
         event.stopPropagation();
-        onFavorite(item.id, !item.favorite);
+        onDelete(item);
       },
-    }, h(Icons.star, { filled: item.favorite }))),
+    }, h(Icons.trash, null))),
   h('div', { className: 'er-kcard-meaning' }, detailText || '—'),
   h('div', { className: 'er-kcard-foot' },
     item.cefrLevel ? h(Badge, { tone: cefrTone(item.cefrLevel) }, item.cefrLevel) : null,
@@ -39,7 +49,7 @@ function KnowledgeCard({ t, item, onOpen, onFavorite }) {
 }
 
 /** Entity detail: meanings, mastery selector, editable note, every context. */
-function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
+function KnowledgeDetail({ t, kind, entityId, onBack, onOpenArticle, notify }) {
   const detail = useLoad(() => call('knowledgeDetail', { kind, entityId }), [kind, entityId]);
   const action = useAction();
   const [noteDraft, setNoteDraft] = React.useState(null);
@@ -56,6 +66,49 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
       notify(t('knowledge.updated'), 'ok');
     }
   };
+  const [confirm, setConfirm] = React.useState(false);
+  /**
+   * Remove the entity from the library.
+   *
+   * The row this page opened is the membership record, so this deletes it
+   * rather than merely un-favoriting: a removed entry keeps no trace of the
+   * learner's mastery or notes.
+   */
+  const remove = async () => {
+    setConfirm(false);
+    const value = await action.run(() => call('deleteKnowledge', { entityType: kind, entityId }));
+    if (value) {
+      notify(t('knowledge.deleted'), 'ok');
+      onBack();
+    }
+  };
+  // A synonym opens the same dictionary popup the article body uses, so the
+  // learner reads one source rather than a second, provider-less card.
+  const [dictionary, setDictionary] = React.useState({ word: null, provider: null, result: null, error: null, busy: false });
+  const openDictionary = async (surface) => {
+    if (surface.length === 0 || dictionary.busy) return;
+    setDictionary({ word: surface, provider: null, result: null, error: null, busy: true });
+    try {
+      const result = await call('lookupWord', { word: surface });
+      setDictionary({
+        word: surface, provider: result?.provider ?? null, result, error: null, busy: false,
+      });
+    } catch (error) {
+      setDictionary({ word: surface, provider: null, result: null, error, busy: false });
+    }
+  };
+  const closeDictionary = () => setDictionary({ word: null, provider: null, result: null, error: null, busy: false });
+  const switchDictionary = async (provider) => {
+    if (dictionary.busy || dictionary.word === null) return;
+    setDictionary((previous) => ({ ...previous, busy: true, error: null }));
+    try {
+      await call('savePluginSettings', { dictionary: provider });
+      const result = await call('lookupWord', { word: dictionary.word, force: true });
+      setDictionary({ word: dictionary.word, provider, result, error: null, busy: false });
+    } catch (error) {
+      setDictionary((previous) => ({ ...previous, busy: false, error }));
+    }
+  };
 
   if (detail.status === 'loading' && !data) {
     return h('div', { className: 'er-page' }, h(Skeleton, { height: 220, radius: 20 }));
@@ -67,32 +120,47 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
   }
 
   const contexts = data.contexts ?? [];
-  const header = h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-    h('div', { className: 'er-dict-head', style: { flex: 1 } },
-      h('div', { className: 'er-dict-word', style: { fontSize: 22 } }, data.expression),
-      h(SpeakButton, { t, text: data.expression, size: 'sm', variant: 'ghost' }),
-      data.phonetic ? h('span', { className: 'er-phonetic' }, data.phonetic) : null,
-      kind === 'word' && data.cefrLevel ? h(Badge, { tone: cefrTone(data.cefrLevel) }, data.cefrLevel) : null),
-    h(Button, {
-      size: 'sm', variant: 'ghost', iconOnly: true, children: t('common.favorite'),
-      icon: h('span', { style: { color: data.favorite ? 'var(--er-amber)' : undefined, display: 'grid' } }, h(Icons.star, { filled: data.favorite })),
-      onClick: () => update({ favorite: !data.favorite }),
-    }));
+  // The delete control sits on the Cell's eyebrow row, top-right, so it lines up
+  // with "详情" instead of floating over the word block.
+  const actions = h(Button, {
+    size: 'sm', variant: 'ghost', iconOnly: true, 'aria-label': t('common.delete'),
+    icon: h(Icons.trash, null),
+    onClick: () => setConfirm(true),
+  });
+  const header = h('div', { className: 'er-dict-head', style: { flex: 1, minWidth: 0 } },
+    h('div', { className: 'er-dict-word', style: { fontSize: 22 } }, data.expression),
+    h(SpeakButton, { t, text: data.expression, size: 'sm', variant: 'ghost' }),
+    data.phonetic ? h('span', { className: 'er-phonetic' }, data.phonetic) : null,
+    kind === 'word' && (data.partOfSpeech ?? []).length > 0
+      ? h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+        (data.partOfSpeech ?? []).map((pos) => h(Badge, { key: pos, tone: 'soft' }, pos)))
+      : null,
+    kind === 'word' && data.cefrLevel ? h(Badge, { tone: cefrTone(data.cefrLevel) }, data.cefrLevel) : null);
 
   const meanings = kind === 'word' ? (data.meanings ?? []) : [];
   const meaningBlock = kind === 'word'
     ? meanings.map((meaning, index) => h('div', { key: index, className: 'er-meaning' },
       h('div', { className: 'er-meaning-cn' }, meaning.meaning),
       meaning.contextMeaning ? h('div', { className: 'er-meaning-ctx' }, meaning.contextMeaning) : null))
-    : [h('div', { key: 'text', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-      data.meaning ? h('div', { className: 'er-kv-value' }, data.meaning) : null,
-      data.explanation ? h('div', { className: 'er-meaning-ctx' }, data.explanation) : null,
-      data.pattern ? h(Badge, { tone: 'blue' }, data.pattern) : null)];
+    : kind === 'sentence'
+      // A sentence's meaning is its translation, which used to be buried in the
+      // context list and never reached the detail card.
+      ? [h('div', { key: 'translation', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+        data.translation?.natural ? h('div', { className: 'er-meaning-cn' }, data.translation.natural) : null,
+        data.translation?.literal ? h('div', { className: 'er-meaning-ctx' }, `${t('reader.literal')}：${data.translation.literal}`) : null)]
+      : [h('div', { key: 'text', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+        data.meaning ? h('div', { className: 'er-kv-value' }, data.meaning) : null,
+        data.explanation ? h('div', { className: 'er-meaning-ctx' }, data.explanation) : null,
+        data.pattern ? h(Badge, { tone: 'blue' }, data.pattern) : null)];
   const synonyms = kind === 'word' && (data.synonyms ?? []).length > 0
     ? h('div', { className: 'er-kv', style: { marginTop: 10 } },
       h('div', { className: 'er-kv-label' }, t('word.synonyms')),
       h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-        data.synonyms.map((value) => h('span', { key: value, className: 'er-token' }, value))))
+        data.synonyms.map((value) => h('button', {
+          key: value, type: 'button', className: 'er-token er-token--lookup',
+          title: t('word.lookup'), 'aria-label': `${value} ${t('word.lookup')}`,
+          onClick: () => openDictionary(value),
+        }, value))))
     : null;
   const masteryRow = h('div', { className: 'er-chips' },
     [0, 1, 2, 3, 4].map((level) => h('button', {
@@ -111,20 +179,34 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
       h(Button, { size: 'sm', disabled: action.pending, onClick: () => update({ notes: noteDraft ?? '' }) }, t('knowledge.saveNote'))));
   const contextList = contexts.length === 0
     ? h(Empty, { icon: h(Icons.bookOpen, null), title: t('knowledge.noContext'), description: '' })
-    : h('div', { className: 'er-cell-scroll', style: { display: 'flex', flexDirection: 'column', gap: 8, '--er-cell-max': '460px' } },
-      contexts.map((context, index) => h('div', { key: index, className: 'er-struct-item' },
-        h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
-          h('span', { className: 'er-struct-type', style: { alignSelf: 'flex-start' } }, context.title ?? ''),
-          context.cefrLevel ? h(Badge, { tone: cefrTone(context.cefrLevel) }, context.cefrLevel) : null,
-          context.sourceName ? h(Badge, { tone: 'soft' }, context.sourceName) : null),
-        context.contextMeaning ? h('div', { className: 'er-struct-text' }, context.contextMeaning) : null,
-        // Same two shapes as the reader: a bare string or `{exactText}`.
-        (context.evidence ?? []).map((item, at) => h('div', {
-          key: at, className: 'er-example', style: { marginTop: 4 },
-        }, typeof item === 'string' ? item : item?.exactText ?? '')),
-        context.analysis?.translation?.natural
-          ? h('div', { className: 'er-meaning-ctx', style: { marginTop: 4 } }, context.analysis.translation.natural)
-          : null)));
+    : h('div', { className: 'er-cell-scroll er-context-list', style: { display: 'flex', flexDirection: 'column', gap: 8, '--er-cell-max': '460px' } },
+      contexts.map((context, index) => {
+        // A context that resolves to a sentence opens that article, scrolled to
+        // it; one whose evidence no longer matches anything stays static.
+        const target = context.articleId !== undefined && context.sentenceIndex !== null && context.sentenceIndex !== undefined
+          ? context
+          : null;
+        const body = h(React.Fragment, null,
+          h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+            h('span', { className: 'er-struct-type', style: { alignSelf: 'flex-start' } }, context.title ?? ''),
+            context.cefrLevel ? h(Badge, { tone: cefrTone(context.cefrLevel) }, context.cefrLevel) : null,
+            context.sourceName ? h(Badge, { tone: 'soft' }, context.sourceName) : null),
+          context.contextMeaning ? h('div', { className: 'er-struct-text' }, context.contextMeaning) : null,
+          // Same two shapes as the reader: a bare string or `{exactText}`.
+          (context.evidence ?? []).map((item, at) => h('div', {
+            key: at, className: 'er-example', style: { marginTop: 4 },
+          }, typeof item === 'string' ? item : item?.exactText ?? '')),
+          context.analysis?.translation?.natural
+            ? h('div', { className: 'er-meaning-ctx', style: { marginTop: 4 } }, context.analysis.translation.natural)
+            : null);
+        return target === null
+          ? h('div', { key: index, className: 'er-struct-item' }, body)
+          : h('button', {
+            key: index, type: 'button', className: 'er-struct-item er-struct-item--link',
+            'aria-label': `${context.title ?? ''} ${t('knowledge.openContext')}`,
+            onClick: () => onOpenArticle?.(target.articleId, target.sentenceIndex),
+          }, body);
+      }));
   return h('div', { className: 'er-page' },
     h('div', { className: 'er-topbar' },
       h(Button, { variant: 'ghost', icon: h(Icons.arrowLeft, null), onClick: onBack }, t('common.back')),
@@ -133,11 +215,41 @@ function KnowledgeDetail({ t, kind, entityId, onBack, notify }) {
         h('span', null, KIND_LABELS[kind]), h('span', { className: 'er-crumb-dot' }),
         h('span', null, data.expression))),
     h(Board, null,
-      h(Cell, { span: 8, size: 'feature', eyebrow: t('knowledge.detail') }, header,
+      h(Cell, { span: 8, size: 'feature', eyebrow: t('knowledge.detail'), actions }, header,
         h('div', { style: { marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 } }, meaningBlock), synonyms,
         h('div', { style: { marginTop: 16 } }, masteryRow)),
       h(Cell, { span: 4, eyebrow: t('knowledge.myNote') }, noteBlock),
       h(Cell, { span: 12, eyebrow: `${t('knowledge.contexts')} · ${contexts.length}`, icon: h(Icons.bookOpen, null) }, contextList)),
+    // Removing an entry is destructive to the learner's own record, so it asks
+    // first and says what it costs before the button runs it.
+    confirm
+      ? h(ConfirmDialog, {
+        title: t('knowledge.deleteConfirmTitle'),
+        description: h('div', { className: 'er-confirm-body' },
+          h('p', null, t('knowledge.deleteConfirm', { expression: data.expression }))),
+        confirmLabel: t('knowledge.deleteConfirmRun'),
+        cancelLabel: t('common.cancel'),
+        onConfirm: remove,
+        onCancel: () => setConfirm(false),
+      })
+      : null,
+    // A synonym opens the dictionary the same way a word in the article body
+    // does; clicking the scrim closes it, as with every dialog.
+    dictionary.word
+      ? h(Dialog, {
+        title: dictionary.busy
+          ? t('reader.dictLoading')
+          : `${dictionary.word} · ${t('reader.dictionaryTitle')}`,
+        onClose: closeDictionary,
+      }, h(DictionaryCard, {
+        t,
+        word: dictionary.word,
+        result: dictionary.result,
+        error: dictionary.error,
+        busy: dictionary.busy,
+        onSwitch: switchDictionary,
+      }))
+      : null,
     action.error ? h(Alert, null, action.error.message) : null);
 }
 
@@ -150,23 +262,53 @@ const KIND_ICONS = {
 };
 
 /** One knowledge library page. */
-function KnowledgePage({ t, kind, notify }) {
+function KnowledgePage({ t, kind, onOpenArticle, notify, onOpenDetail }) {
   const [search, setSearch] = React.useState('');
   // Everything listed is already in the library, so "only favourites" would be a
   // no-op; the useful filter is what still needs learning.
   const [unmasteredOnly, setUnmasteredOnly] = React.useState(false);
   const [openId, setOpenId] = React.useState(null);
+  // A detail opened for one kind must not survive a switch to another kind.
+  // The same component instance is reused, so the old `openId` would send a
+  // word's id to the phrase/collocation/sentence lookup and the page would show
+  // "That expression no longer exists." Reset it during the kind change, before
+  // the stale detail can render.
+  const [kindAtOpen, setKindAtOpen] = React.useState(kind);
+  if (kindAtOpen !== kind) {
+    setKindAtOpen(kind);
+    setOpenId(null);
+  }
+  // The shell owns the route, so a card there opens the detail through it and
+  // the view survives switching away and coming back. Standalone (the tests) the
+  // page keeps its own local view.
+  const open = (id) => {
+    if (onOpenDetail) {
+      onOpenDetail(kind, id);
+      return;
+    }
+    setOpenId(id);
+  };
   const list = useLoad(() => call('searchKnowledge', {
     kind, search, maxMastery: unmasteredOnly ? 2 : undefined,
     limit: 60,
   }), [kind, search, unmasteredOnly]);
   const action = useAction();
-  const favorite = async (id, value) => {
-    const updated = await action.run(() => call('updateKnowledge', { entityType: kind, entityId: id, favorite: value }));
-    if (updated) list.reload();
+  // The only per-card action is removal, so a card carries the same
+  // confirmation the detail page uses: the learner's mastery and notes go with
+  // the entry, and that is not something to undo by accident.
+  const [confirmId, setConfirmId] = React.useState(null);
+  const remove = async () => {
+    const target = confirmId;
+    setConfirmId(null);
+    const value = await action.run(() => call('deleteKnowledge', { entityType: kind, entityId: target }));
+    if (value) {
+      notify(t('knowledge.deleted'), 'ok');
+      list.reload();
+    }
   };
+  const confirmEntry = list.data?.find((entry) => entry.id === confirmId);
   if (openId !== null) {
-    return h(KnowledgeDetail, { t, kind, entityId: openId, onBack: () => setOpenId(null), notify });
+    return h(KnowledgeDetail, { t, kind, entityId: openId, onBack: () => setOpenId(null), onOpenArticle, notify });
   }
   const body = list.status === 'loading' && !list.data
     ? h('div', { className: 'er-kgrid' }, [0, 1, 2, 3].map((index) => h(Skeleton, { key: index, height: 112, radius: 15 })))
@@ -181,8 +323,8 @@ function KnowledgePage({ t, kind, notify }) {
           title: t(`knowledge.empty.${kind}.title`, { fallback: t('knowledge.emptyTitle') }),
           description: t(`knowledge.empty.${kind}.body`, { fallback: t('knowledge.emptyBody') }),
         })
-        : h('div', { className: 'er-kgrid' }, list.data.map((item) => h(KnowledgeCard, {
-          key: item.id, t, item, onOpen: setOpenId, onFavorite: favorite,
+        : h('div', { className: kind === 'sentence' ? 'er-kgrid er-kgrid--sentence' : 'er-kgrid' }, list.data.map((item) => h(KnowledgeCard, {
+          key: item.id, t, item, onOpen: open, onDelete: (entry) => setConfirmId(entry.id),
         })));
   return h('div', { className: 'er-page' },
     h('div', { className: 'er-topbar' },
@@ -203,6 +345,19 @@ function KnowledgePage({ t, kind, notify }) {
         onClick: () => setUnmasteredOnly(!unmasteredOnly),
       }, t('knowledge.notMastered'))),
     body,
+    // Removing a card is destructive to the learner's own record, so the card
+    // action asks first and names what it costs, exactly as the detail page does.
+    confirmId !== null
+      ? h(ConfirmDialog, {
+        title: t('knowledge.deleteConfirmTitle'),
+        description: h('div', { className: 'er-confirm-body' },
+          h('p', null, t('knowledge.deleteConfirm', { expression: confirmEntry?.expression ?? '' }))),
+        confirmLabel: t('knowledge.deleteConfirmRun'),
+        cancelLabel: t('common.cancel'),
+        onConfirm: remove,
+        onCancel: () => setConfirmId(null),
+      })
+      : null,
     action.error ? h(Alert, null, action.error.message) : null);
 }
 
@@ -333,6 +488,7 @@ function SettingsPage({ t, notify }) {
     modelOverride: data.data.modelOverride ?? null,
     sentenceConcurrency: data.data.tuning?.sentenceConcurrency ?? 2,
     retryLimit: data.data.tuning?.retryLimit ?? 2,
+    dictionary: data.data.dictionary ?? 'youdao',
   }) : null;
   /**
    * Apply an edit and persist it immediately: these are preferences, so a save
@@ -350,6 +506,7 @@ function SettingsPage({ t, notify }) {
           retryLimit: next.retryLimit,
         },
         modelOverride: next.modelOverride,
+        dictionary: next.dictionary,
       });
       if (result?.saved === false) {
         // The chosen model disappeared from the Harness: keep the old value.
@@ -425,6 +582,16 @@ function SettingsPage({ t, notify }) {
             value: draft.retryLimit,
             onChange: (event) => applyDraft({ retryLimit: Math.max(1, Math.min(5, Number(event.target.value) || 1)) }),
           })),
+        h('div', { className: 'er-set-row' },
+          h('div', { className: 'er-set-row-text' },
+            h('div', { className: 'er-set-row-title' }, t('settings.dictionary')),
+            h('div', { className: 'er-set-row-desc' }, t('settings.dictionaryHint'))),
+          h('select', {
+            className: 'er-select', style: { width: 150 }, value: draft.dictionary,
+            onChange: (event) => applyDraft({ dictionary: event.target.value }),
+          },
+            h('option', { value: 'youdao' }, t('settings.dictionaryYoudao')),
+            h('option', { value: 'bing' }, t('settings.dictionaryBing')))),
         h('div', { className: 'er-set-row' },
           h('div', { className: 'er-set-row-text' },
             h('div', { className: 'er-set-row-title' }, t('settings.llmService')),
@@ -518,18 +685,7 @@ function SettingsPage({ t, notify }) {
             h('div', { className: 'er-backup-item' },
               h('div', { className: 'er-backup-path er-mono' }, `${settings.dataDir ?? ''}/cache`),
               h('div', { className: 'er-set-row-desc' }, t('settings.backupCache')))),
-          h('div', { className: 'er-set-row-desc' }, t('settings.backupRestore'))),
-        h('div', { className: 'er-set-row' },
-          h('div', { className: 'er-set-row-text' },
-            h('div', { className: 'er-set-row-title' }, t('settings.knowledge')),
-            h('div', { className: 'er-set-row-desc' }, t('settings.knowledgeHint'))),
-          h(Button, { variant: 'ghost', onClick: async () => {
-            const result = await action.run(() => call('clearKnowledge'));
-            if (result) {
-              notify(t('settings.knowledgeCleared', { count: result.cleared }), 'ok');
-              data.reload();
-            }
-          } }, t('settings.knowledgeClear')))),
+          h('div', { className: 'er-set-row-desc' }, t('settings.backupRestore')))),
       h(Cell, { span: 12, eyebrow: t('settings.about'), icon: h(Icons.info, null) },
         h('div', { className: 'er-kv' }, h('div', { className: 'er-kv-value' }, t('settings.aboutBody'))),
         h('div', { className: 'er-kv', style: { marginTop: 8 } },

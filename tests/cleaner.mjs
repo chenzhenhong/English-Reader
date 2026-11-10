@@ -120,6 +120,70 @@ console.log('\nheadline extraction');
   check('an empty document has no title', extractTitle('') === '');
 }
 
+console.log('\na photo caption is page furniture');
+{
+  // NPR prints the picture description, the credit and the "hide caption" toggle
+  // as one paragraph. It reads like prose, so it needs the credit signal.
+  const html = `
+    <html><head><title>Some headline : NPR</title></head>
+    <body>
+      <p>After years of increasing to record-high levels, the homeless population in the U.S. dropped more than 6% in 2025.</p>
+      <div class="credit-caption"><div class="caption-wrap"><div class="caption">
+        <p>People line up along temporary tents to partake in a free Thanksgiving meal provided by the Union Rescue Mission as the Los Angeles Skid Row district annual feast hosts thousands of homeless and others in need, in downtown Los Angeles on Nov. 24, 2022.
+          <b class="credit">Damian Dovarganes/AP</b>
+          <b class="hide-caption"><b>hide caption</b></b>
+        </p>
+      </div></div></div>
+      <p>That amounts to roughly 49,000 fewer people without housing, and it is the second year in a row that homelessness has declined.</p>
+    </body></html>`;
+  const result = cleanArticle(html, { title: 'Some headline : NPR' });
+  check('the caption paragraph is dropped', !/hide caption/i.test(result.text), result.text.slice(0, 200));
+  check('the caption credit is dropped', !/Dovarganes/.test(result.text));
+  check('the body paragraphs are kept', /After years of increasing/.test(result.text) && /49,000 fewer/.test(result.text), result.text.slice(0, 200));
+  check('the caption counts as dropped furniture', result.dropped >= 1, String(result.dropped));
+}
+
+console.log('\na real DOM decides what is prose and what is chrome');
+{
+  const prose = 'The article body is real prose and it must survive the cleaning pass.';
+  const prose2 = 'The closing line is a different sentence and it is also body copy.';
+  const chrome = 'This is page furniture and it is not article prose at all.';
+
+  // Only text inside a prose element is collected. A bare <div> is page layout,
+  // not prose, so text directly in one is not the article.
+  const proseOnly = cleanArticle(`<div>${chrome}</div><p>${prose}</p>`, {});
+  check('text outside a prose element is not collected', !/page furniture/.test(proseOnly.text), proseOnly.text);
+  check('text inside a paragraph is collected', prose.includes(proseOnly.paragraphs[0] ?? ''), proseOnly.text);
+
+  // Chrome containers drop their text before it is ever scored.
+  const structural = cleanArticle(`
+    <figure><figcaption><p>${chrome}</p></figcaption></figure>
+    <aside><p>${chrome}</p></aside>
+    <nav><p>${chrome}</p></nav>
+    <form><p>${chrome}</p></form>
+    <p>${prose}</p>`, {});
+  check('a figure caption is dropped structurally', !/page furniture/.test(structural.text), structural.text.slice(0, 160));
+  check('an aside is dropped structurally', !/page furniture/.test(structural.text));
+  check('a nav is dropped structurally', !/page furniture/.test(structural.text));
+  check('a form is dropped structurally', !/page furniture/.test(structural.text));
+  check('real body prose survives the chrome drop', prose.includes(structural.paragraphs[0] ?? ''), structural.text);
+
+  // Chrome text must not merge with the prose around it.
+  const mixed = cleanArticle(`<li>${prose} <button>${chrome}</button> ${prose2}</li>`, {});
+  check('chrome text does not merge with prose', !/page furniture/.test(mixed.text), mixed.text);
+  check('the prose around the chrome survives', /real prose/.test(mixed.text) && /closing line/.test(mixed.text), mixed.text);
+
+  // A block that still carries markup is chrome, not prose.
+  check('a block with residual markup scores zero',
+    proseScore('Embed <iframe src="https://x.test/embed" width="100%"></iframe>') === 0);
+  check('clean prose still scores', proseScore(prose) > 0);
+
+  // A browser closes an open <p> when a block start tag arrives, so NPR's
+  // transcript lines stay separate instead of nesting into one paragraph.
+  const nested = cleanArticle(`<div><p>${prose}<p>${prose2}</p></div>`, {});
+  check('nested paragraphs stay separate', nested.paragraphs.length === 2, JSON.stringify(nested.paragraphs));
+}
+
 console.log('\nan empty or broken page yields nothing');
 {
   check('empty html yields nothing', cleanArticle('').text === '');

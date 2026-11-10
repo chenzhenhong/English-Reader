@@ -101,28 +101,16 @@ console.log('profile defaults and normalization');
 }
 
 // -------------------------------------------------------------- enforcement
-console.log('\nthe range is enforced on import');
+console.log('\nimport does not enforce the range');
 {
-  const facade = makeFacade();
-  const [profile] = facade.listProfiles();
+  // The learner picks the candidates explicitly, so import does not
+  // second-guess the choice: the range stays a collection preference and the
+  // fetched body is stored as it was extracted.
   const source = readFileSync(new URL('../lib/facade.js', import.meta.url), 'utf8');
-  const helper = source.slice(source.indexOf('function applyWordLimit'),
-    source.indexOf('function applyWordLimit') + 1400);
-
-  check('unlimited returns the text untouched', /wordLimitMode !== 'range'[\s\S]{0,120}ok: true, text/.test(helper));
-  check('a short article is rejected', /words < min[\s\S]{0,80}tooShort/.test(helper));
-  check('an over-long article is rejected without truncation',
-    /profile\.truncate !== true[\s\S]{0,80}tooLong/.test(helper));
-  check('an over-long article is cut with truncation', /truncateToWords\(text, max\)/.test(helper));
-  check('a cut below the minimum is rejected',
-    /cut\.words < min[\s\S]{0,80}tooShortAfterTruncate/.test(helper));
-
-  // The import path must consult it and report the reason.
   const importBody = source.slice(source.indexOf('async function confirmImport'),
     source.indexOf('// -------------------------------------------------------------- analysis'));
-  check('import applies the limit', importBody.includes('applyWordLimit'));
-  check('import reports truncation', importBody.includes('truncated: limited.truncated'));
-  check('import reports a rejection reason', importBody.includes('reason: limited.reason'));
+  check('import does not apply a word limit', !importBody.includes('applyWordLimit'));
+  check('import keeps the fetched body as-is', importBody.includes('text: preview.text'));
 }
 
 // --------------------------------------------------------------------- form

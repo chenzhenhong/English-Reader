@@ -115,6 +115,43 @@ console.log('\nremoving an entity takes it out of the library');
   check('a removed phrase leaves the library', listed === 0, String(listed));
 }
 
+console.log('\ndeleting an entity removes the library row directly');
+{
+  const { facade, articleId } = makeFacade();
+  const ids = { word: 'voc_t1', phrase: 'phr_t1', collocation: 'col_t1', sentence: 'sen_t1' };
+  for (const [kind, id] of Object.entries(ids)) {
+    facade.updateKnowledge({ entityType: kind, entityId: id, favorite: true });
+  }
+  for (const kind of Object.keys(ids)) {
+    check(`${kind} is listed before deletion`, facade.searchKnowledge({ kind, limit: 200 }).length === 1);
+  }
+
+  const result = facade.deleteKnowledge({ entityType: 'word', entityId: 'voc_t1' });
+  check('deleteKnowledge reports the removal', result.deleted === true && result.removed === 1, JSON.stringify(result));
+  check('the word leaves the library', facade.searchKnowledge({ kind: 'word', limit: 200 }).length === 0);
+  check('the reader no longer marks the word saved',
+    facade.getArticle(articleId).words.find((word) => word.id === 'voc_t1')?.favorite !== true);
+
+  // The underlying record belongs to the article and must survive.
+  const db = new DatabaseSync(join(join(facade.dirs.root, 'database'), 'english-reader.sqlite'));
+  check('the vocabulary record survives the library delete',
+    db.prepare('SELECT COUNT(*) AS n FROM vocabulary WHERE id = ?').get('voc_t1').n === 1);
+  db.close();
+
+  facade.deleteKnowledge({ entityType: 'phrase', entityId: 'phr_t1' });
+  facade.deleteKnowledge({ entityType: 'collocation', entityId: 'col_t1' });
+  facade.deleteKnowledge({ entityType: 'sentence', entityId: 'sen_t1' });
+  for (const kind of Object.keys(ids)) {
+    check(`${kind} leaves the library after deletion`, facade.searchKnowledge({ kind, limit: 200 }).length === 0);
+  }
+  const missing = facade.deleteKnowledge({ entityType: 'word', entityId: 'voc_t1' });
+  check('deleting an already-removed entity is a no-op', missing.deleted === true && missing.removed === 0, JSON.stringify(missing));
+  // `deleteKnowledge` throws synchronously, so the refusal is caught directly.
+  let unknown = null;
+  try { facade.deleteKnowledge({ entityType: 'nope', entityId: 'x' }); } catch (error) { unknown = error; }
+  check('an unknown kind is refused', unknown?.code === 'SCHEMA_VALIDATION_FAILED', unknown?.code);
+}
+
 console.log('\nthe queries use inner joins');
 {
   const source = readFileSync(new URL('../lib/facade.js', import.meta.url), 'utf8');

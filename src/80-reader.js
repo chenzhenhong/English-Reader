@@ -29,7 +29,7 @@ function wordIndex(detail) {
 }
 
 /** Render one sentence with clickable analysed words inside it. */
-function SentenceText({ text, words, onWord, active, onSelect }) {
+function SentenceText({ text, words, onWord, active, onSelect, onDictionary }) {
   const parts = React.useMemo(() => {
     const out = [];
     const pattern = /[A-Za-z][A-Za-z'’\-]*/g;
@@ -38,13 +38,53 @@ function SentenceText({ text, words, onWord, active, onSelect }) {
     while ((match = pattern.exec(text)) !== null) {
       if (match.index > cursor) out.push({ kind: 'text', value: text.slice(cursor, match.index) });
       const surface = match[0];
+      // Every alphabetic token is a word token; `word` says whether the
+      // article analysed it, which is what decides the card in an unselected
+      // sentence and the lookup marker in a selected one.
       const word = words.get(surface.toLowerCase().replace(/['’]s$/, ''));
-      out.push({ kind: word ? 'word' : 'text', value: surface, word });
+      out.push({ kind: 'word', value: surface, word });
       cursor = match.index + surface.length;
     }
     if (cursor < text.length) out.push({ kind: 'text', value: text.slice(cursor) });
     return out;
   }, [text, words]);
+  // Only the sentence the learner has selected becomes a lookup surface; every
+  // other sentence stays exactly as it was, so the sentence click and the
+  // analysed-word card never compete for the same word.
+  const interactive = active === true && typeof onDictionary === 'function';
+  const renderWord = (part, index) => {
+    if (part.kind !== 'word') return h('span', { key: index }, part.value);
+    const value = part.value;
+    if (interactive) {
+      // The lookup affordance (amber hover) applies to every word in the
+      // selected sentence, but the dotted underline stays a marker for
+      // parsed words alone: an unanalysed word is a lookup target, not a
+      // card.
+      return h('span', {
+        key: index,
+        className: part.word ? 'er-word er-word--lookup' : 'er-word--lookup',
+        'data-known': part.word ? part.word.masteryLevel >= 3 : undefined,
+        title: value,
+        onClick: (event) => {
+          event.stopPropagation();
+          onDictionary(value);
+        },
+      }, value);
+    }
+    if (part.word) {
+      return h('span', {
+        key: index,
+        className: 'er-word',
+        'data-known': part.word.masteryLevel >= 3,
+        title: part.word.meanings?.[0]?.contextMeaning ?? part.word.meanings?.[0]?.meaning ?? '',
+        onClick: (event) => {
+          event.stopPropagation();
+          onWord(part.word);
+        },
+      }, value);
+    }
+    return h('span', { key: index }, value);
+  };
   return h('span', {
     className: 'er-sentence',
     'data-active': active === true,
@@ -57,18 +97,7 @@ function SentenceText({ text, words, onWord, active, onSelect }) {
         onSelect();
       }
     },
-  }, parts.map((part, index) => (part.kind === 'word'
-    ? h('span', {
-      key: index,
-      className: 'er-word',
-      'data-known': part.word.masteryLevel >= 3,
-      title: part.word.meanings?.[0]?.contextMeaning ?? part.word.meanings?.[0]?.meaning ?? '',
-      onClick: (event) => {
-        event.stopPropagation();
-        onWord(part.word);
-      },
-    }, part.value)
-    : h('span', { key: index }, part.value))));
+  }, parts.map(renderWord));
 }
 
 /** Speaker control with a pending/error state, over the Edge-TTS bridge. */
@@ -304,7 +333,7 @@ function SentencePane({ t, sentence, sentenceText, onAddToLibrary }) {
 }
 
 /** Article body renderer used by both reading modes. */
-function ArticleBody({ detail, words, activeIndex, onSelect, onWord }) {
+function ArticleBody({ detail, words, activeIndex, onSelect, onWord, onDictionary }) {
   const blocks = React.useMemo(() => paragraphBlocks(detail), [detail]);
   const paragraphs = blocks.map((block) => {
     // Segmentation trims every sentence, so concatenating spans would lose the
@@ -320,6 +349,7 @@ function ArticleBody({ detail, words, activeIndex, onSelect, onWord }) {
         active: sentence.sentenceIndex === activeIndex,
         onSelect: () => onSelect(sentence.sentenceIndex),
         onWord,
+        onDictionary,
       }));
     });
     return h('p', { key: block.paragraphIndex }, children);

@@ -609,6 +609,12 @@ body[data-ds-dark-theme] .er-root {
 .er-word { cursor: pointer; border-radius: 4px; padding: 0 1px; border-bottom: 1.5px dotted color-mix(in srgb, var(--er-violet) 50%, transparent); }
 .er-word:hover { background: var(--er-violet-soft); }
 .er-word[data-known="true"] { border-bottom-color: color-mix(in srgb, var(--er-mint) 66%, transparent); }
+/* Every word in the selected sentence is a lookup target; the amber wash on
+   hover is how the learner knows. The dotted underline is not part of that
+   affordance — it stays a marker for words the article analysed. */
+.er-word--lookup { cursor: pointer; border-radius: 4px; padding: 0 1px; }
+.er-word--lookup:hover { background: var(--er-amber-soft); }
+.er-dict-hint { padding: 0 2px 10px; font-size: 11px; line-height: 18px; color: var(--er-ink-3); }
 
 .er-side { display: flex; flex-direction: column; gap: var(--er-s-3); min-width: 0; }
 .er-side-card { display: flex; flex-direction: column; gap: var(--er-s-3); }
@@ -648,8 +654,22 @@ body[data-ds-dark-theme] .er-root {
 .er-kv-label { font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--er-ink-3); }
 .er-kv-value { font-size: 12px; line-height: 19px; color: var(--er-ink-2); }
 .er-token { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border-radius: var(--er-r-xs); font-size: 11px; background: var(--er-blue-soft); color: var(--er-blue); border: 1px solid color-mix(in srgb, var(--er-blue) 20%, transparent); }
+/* A synonym that opens the dictionary reads as clickable, the same affordance
+   the article body's words carry. */
+.er-token--lookup { cursor: pointer; font-family: inherit; }
+.er-token--lookup:hover { background: var(--er-amber-soft); color: var(--er-amber); border-color: color-mix(in srgb, var(--er-amber) 30%, transparent); }
 .er-struct { display: flex; flex-direction: column; gap: 6px; }
 .er-struct-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: var(--er-r-sm); background: color-mix(in srgb, var(--er-violet) 5%, transparent); border: 1px solid var(--er-line); }
+/* The library's source contexts are the point of the page, so they read at
+   body size rather than the compact sizes the reader uses for inline evidence. */
+.er-context-list { gap: 10px; }
+.er-context-list .er-struct-text { font-size: 13.5px; line-height: 21px; }
+.er-context-list .er-example { font-size: 12.5px; line-height: 19px; padding: 8px 10px; }
+.er-context-list .er-struct-type { font-size: 11px; }
+/* A context that points at a sentence is a link to it, so it carries the same
+   affordance the article body's words do. */
+.er-struct-item--link { cursor: pointer; width: 100%; text-align: left; font-family: inherit; color: inherit; }
+.er-struct-item--link:hover { border-color: color-mix(in srgb, var(--er-violet) 35%, transparent); background: color-mix(in srgb, var(--er-violet) 9%, transparent); }
 .er-struct-type { align-self: flex-start; font-size: 10px; font-weight: 600; color: var(--er-violet); }
 .er-struct-text { font-size: 12px; line-height: 19px; color: var(--er-ink); }
 .er-en { font-family: var(--ds-font-family-code, inherit); font-size: 11.5px; color: var(--er-ink); }
@@ -662,6 +682,25 @@ body[data-ds-dark-theme] .er-root {
 .er-meaning-cn { font-size: 12.5px; font-weight: 550; }
 .er-meaning-ctx { font-size: 11px; line-height: 17px; color: var(--er-ink-3); }
 .er-example { font-size: 11px; line-height: 17px; color: var(--er-ink-2); padding: 7px 9px; border-radius: var(--er-r-xs); background: var(--er-violet-soft); }
+
+/* ------------------------------------------------------ dictionary popup */
+.er-dict-card { display: flex; flex-direction: column; gap: 10px; }
+.er-dict-source { align-self: flex-start; font-size: 10px; line-height: 15px; color: var(--er-ink-3); }
+.er-dict-section { display: flex; flex-direction: column; gap: 4px; }
+.er-dict-section-title { font-size: 10px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--er-ink-3); }
+.er-dict-def { display: flex; gap: 8px; font-size: 12.5px; line-height: 20px; color: var(--er-ink); }
+.er-dict-pos { flex: none; min-width: 28px; font-size: 11px; font-weight: 650; color: var(--er-amber); }
+.er-dict-example { display: flex; flex-direction: column; gap: 2px; padding: 7px 9px; border-radius: var(--er-r-xs); background: var(--er-violet-soft); }
+.er-dict-example-en { font-size: 11.5px; line-height: 18px; color: var(--er-ink); }
+.er-dict-example-zh { font-size: 11px; line-height: 17px; color: var(--er-ink-3); }
+.er-phonetic-item { display: inline-flex; align-items: center; gap: 4px; }
+.er-audio-btn { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--er-r-xs); border: 1px solid transparent; background: transparent; color: var(--er-ink-3); cursor: pointer; }
+.er-audio-btn:hover { background: var(--er-violet-soft); color: var(--er-violet); }
+.er-audio-btn svg { width: 13px; height: 13px; }
+.er-dict-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 0 24px; }
+.er-dict-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--er-line); border-top-color: var(--er-violet); animation: er-spin .8s linear infinite; }
+.er-dict-loading-text { font-size: 12px; color: var(--er-ink-3); }
+@keyframes er-spin { to { transform: rotate(360deg); } }
 
 /* --------------------------------------------------------------- progress */
 .er-progress { height: 5px; border-radius: var(--er-r-xs); background: color-mix(in srgb, var(--er-ink-3) 14%, transparent); overflow: hidden; }
@@ -746,6 +785,13 @@ body[data-ds-dark-theme] .er-root {
   transition: background .12s ease;
 }
 .er-feed-row:hover { background: color-mix(in srgb, var(--er-violet) 5%, transparent); }
+/* A row with an article opens it, so it reads as a link; the reset keeps the
+   button from looking like a browser button. */
+.er-feed-row--link {
+  cursor: pointer; width: 100%; text-align: left;
+  font-family: inherit; color: inherit; background: transparent; border: none;
+}
+.er-feed-row--link:hover { background: color-mix(in srgb, var(--er-violet) 8%, transparent); }
 .er-feed-icon {
   flex: none; width: 24px; height: 24px; border-radius: var(--er-r-xs);
   display: grid; place-items: center;
@@ -773,6 +819,13 @@ body[data-ds-dark-theme] .er-root {
 .er-kcard-foot {
   display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--er-ink-3); margin-top: auto;
 }
+/* Sentences are clauses: give them a wider card. The clause is the card's
+   headword, so it shares the bold word styling; a long clause wraps inside the
+   first row while the delete control stays at the top-right of that row. */
+.er-kgrid--sentence { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+.er-kcard--sentence { gap: 4px; }
+.er-kcard--sentence .er-kcard-top { align-items: flex-start; }
+.er-kcard--sentence .er-kcard-word { min-width: 0; }
 .er-dots { display: inline-flex; gap: 3px; }
 .er-dot { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--er-ink-3) 22%, transparent); }
 .er-dot[data-on="true"] { background: var(--er-mint); }
@@ -941,6 +994,13 @@ body[data-ds-dark-theme] .er-root {
   flex: 1; min-width: 0; font-size: 11.5px; line-height: 17px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.er-stage-detail-title { font-size: 11px; font-weight: 650; color: var(--er-ink-3); }
+/* A review row carries the sentence plus the quotes that failed, so it wraps
+   and stacks them instead of squashing them onto one line. */
+.er-stage-detail-row--review { flex-wrap: wrap; align-items: flex-start; }
+.er-stage-detail-quotes { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 4px; }
+.er-stage-detail-quotes-label { font-size: 10.5px; color: var(--er-ink-3); }
+.er-stage-detail-quote { display: flex; align-items: center; gap: 6px; }
 .er-stage-detail-raw {
   max-height: 160px; overflow: auto; font-size: 10.5px; line-height: 15px;
   padding: 8px 10px; border-radius: var(--er-r-sm);

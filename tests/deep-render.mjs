@@ -221,7 +221,12 @@ const knowledgeDetail = {
   kind: 'word', id: 'voc_1', expression: 'consolidate', phonetic: '/k/', partOfSpeech: ['verb'],
   meanings: [{ meaning: '巩固', contextMeaning: '巩固新行为' }], wordFormation: { components: ['con', 'solid'], explanation: '共同加固' },
   cefrLevel: 'C1', synonyms: ['strengthen'], antonyms: [], favorite: true, masteryLevel: 2, notes: '注意搭配',
-  contexts: [{ articleId: 'art_demo1', title: article.title, contextMeaning: '巩固新行为', evidence: [{ exactText: 'how people consolidate' }], analysis: { translation: { natural: '人们如何巩固' } } }],
+  contexts: [{ articleId: 'art_demo1', title: article.title, contextMeaning: '巩固新行为', evidence: [{ exactText: 'how people consolidate' }], analysis: { translation: { natural: '人们如何巩固' } }, sentenceIndex: 0 }],
+};
+const sentenceDetail = {
+  kind: 'sentence', id: 'sen_1', expression: 'Small habits can lead to big changes.',
+  translation: { literal: '小习惯能导致大变化。', natural: '小习惯带来大改变。' },
+  contexts: [], favorite: false, masteryLevel: 1, notes: '',
 };
 
 const responses = {
@@ -239,9 +244,9 @@ const responses = {
     byKind: { read: { events: 3, seconds: 1800 }, vocabulary: { events: 1, seconds: 300 } },
     byArticle: [{ articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2', seconds: 1800, minutes: 30, events: 3, lastDay: '2026-11-08' }],
     events: [
-      { day: '2026-11-08', kind: 'read', seconds: 1500, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2' },
-      { day: '2026-11-08', kind: 'vocabulary', seconds: 300, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2' },
-      { day: '2026-11-06', kind: 'read', seconds: 300, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2' },
+      { day: '2026-11-08', kind: 'read', seconds: 1500, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2', sentenceIndex: 2 },
+      { day: '2026-11-08', kind: 'vocabulary', seconds: 300, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2', sentenceIndex: 2 },
+      { day: '2026-11-06', kind: 'read', seconds: 300, articleId: 'art_demo1', title: 'The Power of Small Habits', cefrLevel: 'B2', sentenceIndex: 0 },
     ],
   },
   listProfiles: [{
@@ -306,6 +311,10 @@ globalThis.__fetchDelegate = async (_url, init) => {
     // Only words have rows in this fixture; the other three tabs are empty on
     // purpose so their own empty state is observable.
     const value = kind === 'word' ? knowledgeItems : [];
+    return { ok: true, status: 200, json: async () => ({ ok: true, value }) };
+  }
+  if (op === 'knowledgeDetail') {
+    const value = args?.kind === 'sentence' ? sentenceDetail : responses.knowledgeDetail;
     return { ok: true, status: 200, json: async () => ({ ok: true, value }) };
   }
   const value = responses[op];
@@ -517,6 +526,8 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
     walkLabels(field.children, 0);
   }
   check('every field label is styled the same way', unstyled === 0, `${unstyled} unstyled label(s)`);
+  // The collection form drives every choice through chips and inputs, so no
+  // checkbox-styled control label remains inside a field.
   check('control labels are distinguishable', controlLabels >= 1, String(controlLabels));
 
   // Locate the two action buttons by their label keys and compare order.
@@ -635,6 +646,48 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('a failed stage opens a dialog', source.includes('onInspect: setInspectStage'));
 }
 
+// A review-flagged sentence must say which sentences were flagged and which
+// quotes failed, instead of leaving the learner with an empty dialog.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const sentences = [{
+    sentenceIndex: 1, text: 'Small habits can lead to big changes.',
+    analysisStatus: 'needs_review', review: { missing: ['quoted phrase', 'another missing'] },
+  }];
+  const tasks = [{
+    stage: 'SENTENCE_ANALYSIS', status: 'SUCCEEDED',
+    progress: { sentences: 3, done: 0, needsReview: 1, pending: 2 },
+  }];
+  const nodes = await mount(React.createElement(P.StageDetailDialog, {
+    t, stageId: 'SENTENCE_ANALYSIS', tasks, sentences, onClose: noop, onJump: noop, onRetry: noop,
+  }));
+  const all = flat(nodes);
+  const body = JSON.stringify(nodes);
+  check('the review dialog lists the flagged sentences',
+    all.some((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-stage-detail-row--review')));
+  check('the review dialog names the review list', body.includes('reader.needsReviewTitle'));
+  check('the review dialog shows the sentence', body.includes('Small habits can lead to big changes.'));
+  check('the review dialog says which quotes failed', body.includes('reader.needsReviewReason'));
+  check('the review dialog lists the missing quotes',
+    body.includes('quoted phrase') && body.includes('another missing'));
+}
+
+// A stage with only review-flagged sentences (no failures) must still open the
+// detail dialog, or the learner can never see why.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const tasks = [{
+    stage: 'SENTENCE_ANALYSIS', status: 'SUCCEEDED',
+    progress: { sentences: 3, done: 0, needsReview: 3, pending: 0 },
+  }];
+  const nodes = await mount(React.createElement(P.AnalysisProgress, {
+    t, tasks, onRetry: noop, pending: false, onInspect: noop, failedCount: 0,
+  }));
+  const all = flat(nodes);
+  check('a review-flagged sentence stage opens its detail',
+    all.some((n) => n.type === 'button'));
+}
+
 // Both remaining destructive actions must ask before acting, and say what
 // they cost. Otherwise a mis-click clears a whole analysis or removes an
 // article the learner was reading.
@@ -729,6 +782,91 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the poll stops when the run settles', /if \(!running\) return undefined;/.test(source));
   check('the page never polls without a repeating timer',
     source.includes("typeof window.setInterval !== 'function'"));
+}
+
+// A sentence is only a lookup surface once the learner has selected it. Every
+// word in that sentence becomes a clickable target, while unselected sentences
+// keep the original behaviour: only analysed words answer with the card.
+{
+  // `mount` already returns every element in the tree, so no flattening needed.
+  const words = new Map([['small', { id: 'w1', masteryLevel: 2, meanings: [{ meaning: '小的' }] }]]);
+  const text = 'Small habits can lead to big changes.';
+
+  const active = await mount(React.createElement(P.SentenceText, {
+    t, text, words, active: true, onSelect: noop, onDictionary: noop,
+  }));
+  const lookups = active.filter((n) => String(n.props?.className ?? '').includes('er-word--lookup'));
+  check('the selected sentence tokenises every word', lookups.length === 7, String(lookups.length));
+  check('each lookup word carries its own text', lookups.every((n) => ['Small', 'habits', 'can', 'lead', 'to', 'big', 'changes'].includes(n.props?.children)));
+  check('each lookup word is clickable', lookups.every((n) => typeof n.props?.onClick === 'function'));
+  check('only words become lookup targets', !lookups.some((n) => [' ', '.'].includes(n.props?.children)));
+  // The dotted underline marks an analysed word; a word in the selected
+  // sentence that the article never analysed is still a lookup target, but it
+  // must not pretend to be a card.
+  const classes = (node) => String(node.props?.className ?? '').split(/\s+/);
+  check('only parsed words keep the dotted underline',
+    lookups.filter((n) => classes(n).includes('er-word')).length === 1);
+  check('an unanalysed lookup word carries no underline class',
+    lookups.some((n) => n.props?.children === 'habits' && !classes(n).includes('er-word')));
+  check('a parsed lookup word carries both marks',
+    lookups.some((n) => n.props?.children === 'Small'
+      && classes(n).includes('er-word') && classes(n).includes('er-word--lookup')));
+
+  const settled = await mount(React.createElement(P.SentenceText, {
+    t, text, words, active: false, onSelect: noop, onWord: noop,
+  }));
+  check('an unselected sentence has no lookup words', !settled.some((n) => String(n.props?.className ?? '').includes('er-word--lookup')));
+  check('an unselected sentence still renders analysed words as cards',
+    settled.filter((n) => String(n.props?.className ?? '').includes('er-word')).length === 1);
+
+  const source = readFileSync(new URL('../src/80-reader.js', import.meta.url), 'utf8');
+  check('ArticleBody accepts the dictionary handler', /function ArticleBody\(\{[^}]*onDictionary/.test(source));
+  check('the detail page forwards it to the body', /onDictionary: openDictionary/.test(
+    readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8')));
+}
+
+// The dictionary popup renders whatever the scraped provider returned, and
+// reports a miss with a one-click switch instead of an empty card.
+{
+  const result = {
+    provider: 'youdao',
+    phonetics: [{ label: '英', text: '[ˈhæbɪt]', audio: 'https://dict.youdao.com/dictvoice?audio=habit&type=1' }],
+    definitions: [{ pos: 'n.', text: '习惯；惯常行为' }],
+    examples: [{ en: 'Small habits can lead to big changes.', zh: '小习惯带来大改变。' }],
+    forms: '', collins: [], translation: '',
+  };
+  const card = await mount(React.createElement(P.DictionaryCard, {
+    t, word: 'habit', result, error: null, busy: false, onSwitch: noop,
+  }));
+  const text = JSON.stringify(card);
+  check('the card shows the word', text.includes('habit'));
+  check('the card shows the phonetic', text.includes('[ˈhæbɪt]'));
+  check('the card shows the definition', text.includes('习惯；惯常行为'));
+  check('the card shows the example in both languages',
+    text.includes('Small habits can lead to big changes.') && text.includes('小习惯带来大改变。'));
+  check('the card names the provider line', text.includes('reader.dictSourceLabel'));
+  // Pronunciation comes from the provider's own audio, not the TTS bridge.
+  check('the card offers the provider audio, not TTS',
+    text.includes('er-audio-btn') && !text.includes('er-btn'));
+  check('the audio button is named after the voice', text.includes('英'));
+
+  const busy = await mount(React.createElement(P.DictionaryCard, {
+    t, word: 'habit', result: null, error: null, busy: true, onSwitch: noop,
+  }));
+  const busyText = JSON.stringify(busy);
+  check('a busy lookup shows a loading indicator',
+    busyText.includes('er-dict-loading') && busyText.includes('reader.dictLoading'));
+
+  const failed = await mount(React.createElement(P.DictionaryCard, {
+    t, word: 'habit', result: null, error: { message: 'No dictionary entry for "habit".' }, busy: false, onSwitch: noop,
+  }));
+  check('a miss shows the error', JSON.stringify(failed).includes('No dictionary entry'));
+  check('a miss offers the other provider', /reader\.dictSwitchTo/.test(JSON.stringify(failed)));
+
+  const facadeSource = readFileSync(new URL('../lib/facade.js', import.meta.url), 'utf8');
+  check('the facade stores the provider', /setPluginSetting\('dictionary'/.test(facadeSource));
+  check('the settings page persists the selection', /dictionary: next\.dictionary/.test(
+    readFileSync(new URL('../src/100-knowledge.js', import.meta.url), 'utf8')));
 }
 
 // The dashboard must not duplicate navigation the rail already provides, and
@@ -1016,23 +1154,71 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
 // no branch for it.
 {
   const app = readFileSync(new URL('../src/120-app.js', import.meta.url), 'utf8');
-  const navBlock = app.slice(app.indexOf('const navigateByNav'), app.indexOf('const activeNav'));
   const navIds = [...app.matchAll(/\{ id: '([a-z]+)', icon: '/g)].map((m) => m[1]);
   check('the rail lists its entries', navIds.length >= 8, navIds.join(','));
 
-  // Knowledge sub-pages share one fallback; everything else needs its own branch
-  // or it will silently open the wrong page.
-  const knowledgeIds = ['words', 'phrases', 'collocations', 'sentences'];
-  const explicit = navIds.filter((id) => !knowledgeIds.includes(id) && id !== 'settings');
-  for (const id of explicit) {
-    // `home`, `discover`, `articles`, `review`, `history` each need `go('<page>')`.
-    const expected = id === 'home' ? 'home' : id;
-    check(`nav "${id}" routes to its own page`,
-      new RegExp(`id === '${id}'\\) go\\('${expected}'`).test(navBlock),
-      navBlock.slice(0, 200));
+  // Every section declares a home view, so switching away and back always lands
+  // somewhere rather than on the wrong page.
+  const homeStart = app.indexOf('const sectionHome = {');
+  const homeEnd = app.indexOf('};', homeStart) + 2;
+  const homeBlock = app.slice(homeStart, homeEnd);
+  check('every section declares a home view', homeBlock.includes('page:'), homeBlock.slice(0, 120));
+  const homeById = {};
+  for (const match of homeBlock.matchAll(/([a-z]+): [{] page: '([a-z]+)'/g) ?? []) {
+    homeById[match[1]] = match[2];
   }
-  check('knowledge ids fall through to the knowledge page',
-    /else go\('knowledge'/.test(navBlock));
+  for (const id of navIds) {
+    check(`section "${id}" has a home page`, homeById[id] !== undefined, String(homeById[id]));
+  }
+  check('knowledge ids are sections too', ['words', 'phrases', 'collocations', 'sentences'].every((id) => homeById[id] === 'knowledge'));
+}
+
+// A second-level view (a word detail, an article, a day filter) must survive a
+// switch away and back: the rail restores the view the section was left on.
+{
+  const flatAll = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flatAll(n.children ?? [])]));
+  const textOf = (node) => flatAll([node]).map((n) => (typeof n === 'string' ? n : String(n.props?.children ?? ''))).join(' ');
+  const classes = (n) => String(n.props?.className ?? '').split(/ +/).filter(Boolean);
+  const navButton = (nodes, id) => nodes.find((n) => n.type === 'button' && classes(n).includes('er-nav-item') && textOf(n).includes(`nav.${id}`));
+  const click = (node) => node?.props?.onClick?.();
+  const appNodes = () => mount(React.createElement(P.EnglishReaderApp, { t }));
+
+  // Knowledge: open a word, switch away, come back.
+  let nodes = await appNodes();
+  click(navButton(nodes, 'words'));
+  nodes = await appNodes();
+  const card = nodes.find((n) => classes(n).includes('er-kcard'));
+  click(card);
+  nodes = await appNodes();
+  check('opening a word card shows its detail', nodes.some((n) => classes(n).includes('er-chip')));
+  click(navButton(nodes, 'articles'));
+  nodes = await appNodes();
+  check('switching to articles leaves the word detail', !nodes.some((n) => classes(n).includes('er-chip')));
+  click(navButton(nodes, 'words'));
+  nodes = await appNodes();
+  check('coming back restores the word detail', nodes.some((n) => classes(n).includes('er-chip')));
+
+  // Articles: open an article, switch away, come back.
+  click(navButton(nodes, 'articles'));
+  nodes = await appNodes();
+  const readButton = nodes.find((n) => n.type === 'button' && textOf(n).includes('common.read'));
+  click(readButton);
+  nodes = await appNodes();
+  check('opening an article shows the reader', nodes.some((n) => classes(n).includes('er-article-title')));
+  click(navButton(nodes, 'home'));
+  nodes = await appNodes();
+  click(navButton(nodes, 'articles'));
+  nodes = await appNodes();
+  check('coming back restores the article', nodes.some((n) => classes(n).includes('er-article-title')));
+
+  // Back clears the remembered view, so the next visit starts at the list.
+  const backButton = nodes.find((n) => n.type === 'button' && classes(n).includes('er-btn') && textOf(n).includes('common.back'));
+  click(backButton);
+  nodes = await appNodes();
+  check('back returns to the article list', !nodes.some((n) => classes(n).includes('er-article-title')));
+  click(navButton(nodes, 'articles'));
+  nodes = await appNodes();
+  check('back cleared the remembered article', !nodes.some((n) => classes(n).includes('er-article-title')));
 }
 
 // The log covers a fixed year; there is no range selector any more.
@@ -1166,6 +1352,178 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the three empty messages are distinct', distinct.size === 3, [...distinct].join(' | '));
 }
 
+// Switching knowledge tabs while a detail is open must not reuse the open
+// entity. The detail is opened from local state, and the same component
+// instance is reused across kinds, so the old id would be sent to the new
+// kind's lookup and the page would show "That expression no longer exists."
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const hasChip = (list) => list.some((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-chip'));
+
+  // Open a word detail from the word list.
+  const wordPage = await mount(React.createElement(P.KnowledgePage, { t, kind: 'word', notify: noop }));
+  const card = flat(wordPage).find((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-kcard'));
+  check('the word list offers a card', card !== undefined);
+  card?.props?.onClick?.();
+  const opened = await mount(React.createElement(P.KnowledgePage, { t, kind: 'word', notify: noop }));
+  check('opening a card shows the detail', hasChip(opened));
+
+  // Switch kind while the detail is open.
+  const phrasePage = await mount(React.createElement(P.KnowledgePage, { t, kind: 'phrase', notify: noop }));
+  const phraseFlat = flat(phrasePage);
+  check('switching kind drops the open detail', !hasChip(phraseFlat));
+  check('switching kind shows the phrase list',
+    phraseFlat.some((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-empty'))
+    || phraseFlat.some((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-kcard')));
+}
+
+// A sentence is a clause, not a headword: its card must let the clause wrap,
+// and its detail must carry the translation instead of leaving the reader with
+// an English sentence and no Chinese.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const classes = (node) => String(node.props?.className ?? '').split(/\s+/);
+  const sentenceItem = {
+    id: 'sen_1', kind: 'sentence', expression: 'Small habits can lead to big changes.',
+    detail: '小习惯带来大改变。', translation: { literal: '小习惯能导致大变化。', natural: '小习惯带来大改变。' },
+    cefrLevel: null, sourceCount: 2, articleId: 'art_demo1', articleTitle: article.title,
+    favorite: false, masteryLevel: 1,
+  };
+
+  // A word card shows the dictionary meaning, not the meaning this article gave.
+  const wordItem = {
+    id: 'voc_1', kind: 'word', expression: 'consolidate', phonetic: '/k/',
+    detail: [{ meaning: '巩固', contextMeaning: '巩固新行为' }], cefrLevel: 'C1',
+    sourceCount: 2, articleId: 'art_demo1', articleTitle: article.title, favorite: true, masteryLevel: 2,
+  };
+  const wordCardAll = flat(await mount(React.createElement(P.KnowledgeCard, { t, item: wordItem, onOpen: noop, onDelete: noop })));
+  check('a word card shows the dictionary meaning',
+    wordCardAll.some((n) => classes(n).includes('er-kcard-meaning') && n.props?.children === '巩固'));
+  check('a word card does not show the article context meaning',
+    !wordCardAll.some((n) => classes(n).includes('er-kcard-meaning') && String(n.props?.children).includes('巩固新行为')));
+
+  const cardAll = flat(await mount(React.createElement(P.KnowledgeCard, { t, item: sentenceItem, onOpen: noop, onDelete: noop })));
+  check('a sentence card uses the sentence grid', cardAll.some((n) => classes(n).includes('er-kcard--sentence')));
+  check('a sentence card shows no kind label', !cardAll.some((n) => classes(n).includes('er-kcard-kind')));
+  check('a sentence card renders its clause as the bold headword',
+    cardAll.some((n) => classes(n).includes('er-kcard-word')
+      && n.props?.children === 'Small habits can lead to big changes.'));
+  check('the clause sits on the same row as the delete control',
+    cardAll.some((n) => classes(n).includes('er-kcard-top')
+      && JSON.stringify(n).includes('Small habits can lead to big changes.')
+      && JSON.stringify(n).includes('common.delete')));
+  check('a sentence card shows the translation',
+    cardAll.some((n) => classes(n).includes('er-kcard-meaning') && n.props?.children === '小习惯带来大改变。'));
+  const cardDelete = cardAll.find((n) => n.props?.['aria-label'] === 'common.delete');
+  check('a card offers removal, not a favourite', cardDelete !== undefined);
+  check('a card no longer carries a favourite control',
+    !cardAll.some((n) => n.props?.['aria-label'] === 'common.favorite'));
+  cardDelete?.props?.onClick?.({ stopPropagation: noop });
+
+  const detailAll = flat(await mount(React.createElement(P.KnowledgeDetail, {
+    t, kind: 'sentence', entityId: 'sen_1', onBack: noop, notify: noop,
+  })));
+  check('the sentence detail carries the natural translation',
+    detailAll.some((n) => classes(n).includes('er-meaning-cn') && n.props?.children === '小习惯带来大改变。'));
+  check('the sentence detail also carries the literal translation',
+    detailAll.some((n) => classes(n).includes('er-meaning-ctx') && String(n.props?.children).includes('小习惯能导致大变化。')));
+}
+
+// Removing a library entry is destructive to the learner's own record, so the
+// detail page must offer it behind a confirmation.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const make = () => React.createElement(P.KnowledgeDetail, { t, kind: 'word', entityId: 'voc_1', onBack: noop, notify: noop });
+
+  const detailAll = flat(await mount(make()));
+  const deleteButton = detailAll.find((n) => n.props?.['aria-label'] === 'common.delete');
+  check('the detail page offers a delete control', deleteButton !== undefined);
+  // Both controls must live on the eyebrow row, not float over the word block.
+  const eyebrow = detailAll.find((n) => String(n.props?.className ?? '').includes('er-eyebrow')
+    && JSON.stringify(n).includes('knowledge.detail'));
+  check('the delete control sits on the eyebrow row',
+    eyebrow !== undefined && JSON.stringify(eyebrow).includes('common.delete'));
+  check('the detail page no longer carries a favourite control',
+    !detailAll.some((n) => n.props?.['aria-label'] === 'common.favorite'));
+  deleteButton?.props?.onClick?.();
+
+  const confirming = flat(await mount(make()));
+  check('deleting asks before acting', confirming.some((n) => String(n.props?.className ?? '').includes('er-modal')));
+  check('the confirmation names the deletion',
+    confirming.some((n) => JSON.stringify(n).includes('knowledge.deleteConfirmTitle')));
+
+  const source = readFileSync(new URL('../src/100-knowledge.js', import.meta.url), 'utf8');
+  check('the confirm button runs the removal', /onConfirm: remove/.test(source));
+  check('the detail page writes through deleteKnowledge', source.includes("call('deleteKnowledge'"));
+  check('the removal does not run from the button alone', /onClick: \(\) => setConfirm\(true\)/.test(source));
+}
+
+// A library card's only action is removal, so it carries the same confirmation
+// the detail page uses instead of a separate favourite toggle.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const wordPage = await mount(React.createElement(P.KnowledgePage, { t, kind: 'word', notify: noop }));
+  const removeButton = flat(wordPage).find((n) => n.props?.['aria-label'] === 'common.delete');
+  check('a library card offers a delete control', removeButton !== undefined);
+  check('a library card no longer carries a favourite control',
+    !flat(wordPage).some((n) => n.props?.['aria-label'] === 'common.favorite'));
+  removeButton?.props?.onClick?.({ stopPropagation: noop });
+
+  const confirming = flat(await mount(React.createElement(P.KnowledgePage, { t, kind: 'word', notify: noop })));
+  check('deleting a card asks before acting', confirming.some((n) => String(n.props?.className ?? '').includes('er-modal')));
+  check('the card confirmation names the removal',
+    confirming.some((n) => JSON.stringify(n).includes('knowledge.deleteConfirmTitle')));
+
+  const source = readFileSync(new URL('../src/100-knowledge.js', import.meta.url), 'utf8');
+  check('the library card writes through deleteKnowledge', /call\('deleteKnowledge'/.test(source));
+  check('the card action does not run from the button alone',
+    /onDelete: \(entry\) => setConfirmId\(entry\.id\)/.test(source));
+}
+
+// A word detail carries its part of speech, and its synonyms open the same
+// dictionary the article body uses.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const classes = (node) => String(node.props?.className ?? '').split(/\s+/);
+  const make = () => React.createElement(P.KnowledgeDetail, { t, kind: 'word', entityId: 'voc_1', onBack: noop, notify: noop });
+  const detailAll = await mount(make());
+
+  check('the word detail shows its part of speech',
+    detailAll.some((n) => classes(n).includes('er-badge') && n.props?.children === 'verb'));
+
+  const synonyms = detailAll.filter((n) => classes(n).includes('er-token--lookup'));
+  check('synonyms open the dictionary', synonyms.length === 1, String(synonyms.length));
+  check('a synonym is labelled for the lookup',
+    synonyms[0]?.props?.title === 'word.lookup'
+    && String(synonyms[0].props?.['aria-label']).includes('strengthen'));
+
+  synonyms[0]?.props?.onClick?.();
+  const looking = flat(await mount(make()));
+  check('clicking a synonym opens the dictionary popup',
+    looking.some((n) => String(n.props?.className ?? '').includes('er-modal')));
+  check('the popup names the looked-up word',
+    looking.some((n) => JSON.stringify(n).includes('strengthen')));
+}
+
+// A source context that resolves to a sentence is a link to it.
+{
+  const flat = (list) => list.flatMap((n) => (typeof n === 'string' ? [] : [n, ...flat(n.children ?? [])]));
+  const classes = (node) => String(node.props?.className ?? '').split(/\s+/);
+  const opened = [];
+  const make = () => React.createElement(P.KnowledgeDetail, {
+    t, kind: 'word', entityId: 'voc_1', onBack: noop, notify: noop,
+    onOpenArticle: (articleId, sentenceIndex) => opened.push([articleId, sentenceIndex]),
+  });
+  const detailAll = await mount(make());
+  const items = detailAll.filter((n) => classes(n).includes('er-struct-item--link'));
+  check('a context that resolves to a sentence is a link', items.length === 1, String(items.length));
+  check('the link is labelled for the jump',
+    String(items[0]?.props?.['aria-label'] ?? '').includes('knowledge.openContext'));
+  items[0]?.props?.onClick?.();
+  check('clicking a context opens the article at that sentence',
+    opened.length === 1 && opened[0][0] === 'art_demo1' && opened[0][1] === 0, JSON.stringify(opened));
+}
+
 // The rail brand is one line. It used to be two stacked divs ("English" /
 // "Reader"), which read as a broken wordmark in a 188px rail.
 {
@@ -1250,7 +1608,8 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the heatmap is only pickable on days with activity',
     history.includes("'data-pickable': onPickDay !== undefined && cell.events > 0 && !cell.future"));
   check('clicking the selected day clears the filter',
-    /setSelectedDay\(\(current\) => \(current === day \? null : day\)\)/.test(history));
+    /const next = selectedDay === day \? null : day;\s*\n\s*setSelectedDay\(next\);\s*\n\s*onDayChange\?\.\(next\);/.test(history));
+  check('the filter is pushed to the route', /onDayChange\?\.\(next\)/.test(history));
   check('the feed loads a first page when the filter changes',
     /eventsLimit: FEED_PAGE,\s*\n\s*eventsOffset: offset/.test(history)
     && history.includes('loadFeed(0, true)'));
@@ -1263,11 +1622,50 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('a new day filter resets the feed',
     /setFeedEvents\(\[\]\);\s*\n\s*setFeedHasMore\(false\)/.test(history));
   check('the filter is visible in the topbar', history.includes("t('history.onlyDay')"));
+  // The day filter is route state: the shell passes the saved day back in and
+  // the page reports a change, so switching away and coming back restores it.
+  const appSrc = readFileSync(new URL('../src/120-app.js', import.meta.url), 'utf8');
+  check('the history page receives its saved day', /initialDay: route\.historyDay/.test(appSrc));
+  check('the history page reports day changes back', /onDayChange: \(day\) => go\('history', \{ historyDay: day \}\)/.test(appSrc));
+  check('the day filter is part of the route', /historyDay: null, sections: \{\},/.test(appSrc));
+  check('the page follows a route day after mount',
+    /setSelectedDay\(\(current\) => \(current === initialDay \? current : initialDay\)\)/.test(history));
+  check('the route stores what it was shown', /saveRoute\(route\)/.test(appSrc));
+
+  // A saved day restores the filter chip when the page mounts again.
+  const withDay = await mount(React.createElement(P.StudyHistoryPage, { t, notify: noop, initialDay: '2026-11-08' }));
+  const withDayText = withDay.map((n) => (typeof n === 'string' ? n : String(n.props?.children ?? ''))).join(' ');
+  check('a saved day restores the filter chip', withDayText.includes('history.onlyDay'), withDayText.slice(0, 200));
+
 
   const locale = readFileSync(new URL('../src/110-locale.js', import.meta.url), 'utf8');
   for (const key of ['history.onlyDay', 'history.clearDay', 'history.loading', 'history.listEnd']) {
     check(`"${key}" is defined in both languages`, (locale.match(new RegExp(`'${key}':`, 'g')) ?? []).length === 2);
   }
+}
+
+// A study feed row that belongs to an article opens it, scrolled to the last
+// sentence the learner read.
+{
+  const opened = [];
+  const events = [{
+    day: '2026-11-08', kind: 'read', seconds: 1500, articleId: 'art_demo1',
+    title: 'The Power of Small Habits', cefrLevel: 'B2', sentenceIndex: 2,
+  }];
+  const nodes = await mount(React.createElement(P.ActivityFeed, {
+    t, events, hasMore: false, loading: false,
+    onOpenArticle: (articleId, sentenceIndex) => opened.push([articleId, sentenceIndex]),
+  }));
+  // `mount` already returns a flat list of every node, so filter it directly;
+  // the recursive `flat` helper would visit each node once more via its parent.
+  const rows = nodes.filter((n) => String(n.props?.className ?? '').split(/\s+/).includes('er-feed-row--link'));
+
+  check('a feed row with an article opens it', rows.length === 1, String(rows.length));
+  check('the row is labelled for the jump',
+    String(rows[0]?.props?.['aria-label'] ?? '').includes('history.openArticle'));
+  rows[0]?.props?.onClick?.();
+  check('clicking a feed row opens the article at the read sentence',
+    opened.length === 1 && opened[0][0] === 'art_demo1' && opened[0][1] === 2, JSON.stringify(opened));
 }
 
 // Discovered candidates: the row opens a preview, and the preview offers the

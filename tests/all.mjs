@@ -21,6 +21,8 @@ const suites = [
   ['word-limit', 'tests/word-limit.mjs'],
   ['discovery-persist', 'tests/discovery-persist.mjs'],
   ['cleaner', 'tests/cleaner.mjs'],
+  ['prompt', 'tests/prompt.mjs'],
+  ['dictionary', 'tests/dictionary.mjs'],
   ['stage-counter', 'tests/stage-counter.mjs'],
   ['bento', 'tests/bento.mjs'],
   ['bundle', 'tests/bundle.mjs'],

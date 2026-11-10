@@ -182,14 +182,19 @@ console.log('\nevent detail for the feed');
 {
   const { facade, articleId, dir } = makeFacade();
   seedEvent(dir, { day: localDay(0), seconds: 120, kind: 'read', articleId });
+  // A real read also writes reading progress, which is what the feed row jumps to.
+  facade.saveProgress({ articleId, sentenceIndex: 2, ratio: 0.2, seconds: 120 });
   const without = facade.studyActivity();
   check('events are omitted unless requested', without.events === undefined);
   const withEvents = facade.studyActivity({ includeEvents: true });
-  check('events are returned on request', Array.isArray(withEvents.events) && withEvents.events.length === 1,
+  check('events are returned on request', Array.isArray(withEvents.events) && withEvents.events.length === 2,
     String(withEvents.events?.length));
   check('an event carries its article title', withEvents.events[0].title.length > 0);
   check('an event carries its kind and seconds',
     withEvents.events[0].kind === 'read' && withEvents.events[0].seconds === 120);
+  check('an event carries the last-read sentence for a jump',
+    withEvents.events.some((event) => event.sentenceIndex === 2),
+    JSON.stringify(withEvents.events.map((event) => event.sentenceIndex)));
 }
 
 console.log('\nthe client actually reports time');

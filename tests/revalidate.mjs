@@ -85,6 +85,15 @@ check('declared uncertainty is not lost', JSON.parse(detail.sentences[0].analysi
 const stage = detail.tasks.find((task) => task.stage === 'SENTENCE_ANALYSIS');
 check('stage reflects the audited rows', stage?.status === 'FAILED' || stage?.status === 'SUCCEEDED', stage?.status);
 
+// The detail dialog needs to say *which* quotes failed, so the sentence payload
+// carries them instead of leaving the client to re-derive the evidence check.
+const flagged = detail.sentences.find((item) => item.analysisStatus === 'needs_review');
+check('the flagged sentence carries its missing quotes',
+  flagged?.review?.missing?.includes('a phrase that is not in the article at all'),
+  JSON.stringify(flagged?.review));
+check('a done sentence carries no review detail',
+  detail.sentences.filter((item) => item.analysisStatus === 'done').every((item) => item.review === null));
+
 // Idempotent: a second pass changes nothing.
 const again = facade.revalidateSentences(article.id);
 check('second pass changes nothing', again.cleared === 0 && again.flagged === 0, JSON.stringify(again));

@@ -86,13 +86,16 @@ function AnalysisProgress({ t, tasks, onRetry, pending, onInspect, failedCount }
     // early leaves the task at PENDING while individual sentences are marked
     // failed. Its detail is worth opening whenever either says so.
     const sentenceFailures = stage.id === 'SENTENCE_ANALYSIS' && failedCount > 0;
+    // A review-flagged sentence is not a failure, but its quotes failed the
+    // evidence check, so the card opens the same detail dialog.
+    const reviewCount = stage.id === 'SENTENCE_ANALYSIS' ? (task?.progress?.needsReview ?? 0) : 0;
     // A run that stopped part-way leaves the stage PENDING so it stays
     // retryable, but it did start: its partial results are already on screen.
     // Calling that "待执行" is wrong, and it hides the retry button.
     const started = Number(task?.progress?.done ?? 0) > 0 || Number(task?.progress?.failed ?? 0) > 0;
     const interrupted = status === 'PENDING' && started;
     const shownStatus = interrupted ? 'INTERRUPTED' : status;
-    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW' || interrupted || sentenceFailures;
+    const inspectable = status === 'FAILED' || status === 'NEEDS_REVIEW' || interrupted || sentenceFailures || reviewCount > 0;
     // A stage that has detail but did not itself fail still needs to say how
     // many sentences went wrong, or the card looks successful.
     const failedBadge = sentenceFailures
@@ -208,6 +211,11 @@ function StageDetailDialog({ t, stageId, tasks, sentences, onClose, onJump, onRe
   const failed = stageId === 'SENTENCE_ANALYSIS'
     ? sentences.filter((item) => item.analysisStatus === 'failed')
     : [];
+  // A review-flagged sentence is not a failure, but it did fail the evidence
+  // check, so the dialog lists it with the quotes that could not be matched.
+  const reviewed = stageId === 'SENTENCE_ANALYSIS'
+    ? sentences.filter((item) => item.analysisStatus === 'needs_review')
+    : [];
   const codes = new Map();
   if (failed.length > 0) {
     for (const item of failed) {
@@ -245,6 +253,22 @@ function StageDetailDialog({ t, stageId, tasks, sentences, onClose, onJump, onRe
           h('span', { className: 'er-badge plain' }, `#${item.sentenceIndex + 1}`),
           h('span', { className: 'er-stage-detail-text' }, item.text),
           item.error?.message ? h('span', { className: 'er-meaning-ctx' }, item.error.message) : null,
+          h(Button, { size: 'sm', variant: 'ghost', onClick: () => onJump(item.sentenceIndex) }, t('reader.jumpToSentence')))))
+      : null,
+    // The review list says which sentences were flagged and, for each, exactly
+    // which quoted excerpts could not be found in the article body.
+    reviewed.length > 0
+      ? h('div', { className: 'er-stage-detail-list' },
+        h('div', { className: 'er-stage-detail-title' }, t('reader.needsReviewTitle')),
+        reviewed.map((item) => h('div', { key: item.sentenceIndex, className: 'er-stage-detail-row er-stage-detail-row--review' },
+          h('span', { className: 'er-badge plain' }, `#${item.sentenceIndex + 1}`),
+          h('span', { className: 'er-stage-detail-text' }, item.text),
+          (item.review?.missing ?? []).length > 0
+            ? h('div', { className: 'er-stage-detail-quotes' },
+              h('div', { className: 'er-stage-detail-quotes-label' }, t('reader.needsReviewReason')),
+              (item.review.missing).map((quote, index) => h('div', { key: index, className: 'er-stage-detail-quote' },
+                h('span', { className: 'er-badge plain' }, quote))))
+            : null,
           h(Button, { size: 'sm', variant: 'ghost', onClick: () => onJump(item.sentenceIndex) }, t('reader.jumpToSentence')))))
       : null,
     // The model's raw output is the fastest way to tell a truncation from a
@@ -308,7 +332,7 @@ function useAnalysisPolling(detail, articleId) {
 }
 
 /** The reading page. */
-function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
+function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge, sentenceIndex }) {
   const detail = useLoad(() => call('getArticle', { articleId }), [articleId]);
   useAnalysisPolling(detail, articleId);
   const [mode, setMode] = React.useState('split');
@@ -322,6 +346,10 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
   // Which stage's detail dialog is open, or null when none is.
   const [inspectStage, setInspectStage] = React.useState(null);
   const [noteDraft, setNoteDraft] = React.useState('');
+  // Dictionary lookup for a word in the selected sentence: the word open, the
+  // provider it was queried with, what came back, and whether a request is in
+  // flight. Nothing is persisted; closing the dialog forgets it.
+  const [dictionary, setDictionary] = React.useState({ word: null, provider: null, result: null, error: null, busy: false });
   const action = useAction();
   const words = React.useMemo(() => (detail.data ? wordIndex(detail.data) : new Map()), [detail.data]);
   const sentences = detail.data?.sentences ?? [];
@@ -330,6 +358,33 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
   React.useEffect(() => {
     if (detail.data && active < 0) setActive(detail.data.progress?.sentenceIndex ?? 0);
   }, [detail.data, active]);
+
+  // A context from the library can jump here at one sentence. Apply it once,
+  // then scroll that sentence into view; the flag keeps a later click from
+  // re-scrolling, and the target lives in a ref so a re-render cannot re-apply
+  // it.
+  const jumpRef = React.useRef(null);
+  const jumpedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (sentenceIndex === undefined || sentenceIndex < 0) {
+      jumpRef.current = null;
+      jumpedRef.current = false;
+      return;
+    }
+    if (jumpRef.current === sentenceIndex) return;
+    jumpRef.current = sentenceIndex;
+    jumpedRef.current = true;
+    setActive(sentenceIndex);
+  }, [sentenceIndex, detail.data]);
+
+  React.useEffect(() => {
+    if (!jumpedRef.current || typeof document === 'undefined') return;
+    const node = document.querySelector('.er-sentence[data-active="true"]');
+    if (node !== null) {
+      node.scrollIntoView?.({ block: 'center' });
+      jumpedRef.current = false;
+    }
+  }, [active, sentences.length]);
 
   // Reading time is measured, not estimated: accumulate wall-clock time only
   // while this pane is visible, and attribute it to the article on the next save.
@@ -395,6 +450,45 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
     if (value) {
       notify(next ? t('reader.addedToLibrary') : t('reader.removedFromLibrary'), 'ok');
       detail.reload();
+    }
+  };
+  /**
+   * Look one word up on the provider the learner picked.
+   *
+   * The popup replaces the local card for that word: a word in the selected
+   * sentence answers with the dictionary, so the learner reads one source
+   * rather than two. The article's own analysis stays available from the
+   * sentence pane.
+   */
+  const openDictionary = async (surface) => {
+    if (surface.length === 0 || dictionary.busy) return;
+    setDictionary({ word: surface, provider: null, result: null, error: null, busy: true });
+    try {
+      const result = await call('lookupWord', { word: surface });
+      setDictionary({
+        word: surface, provider: result?.provider ?? null, result, error: null, busy: false,
+      });
+    } catch (error) {
+      setDictionary({ word: surface, provider: null, result: null, error, busy: false });
+    }
+  };
+  const closeDictionary = () => setDictionary({ word: null, provider: null, result: null, error: null, busy: false });
+  /**
+   * Retry the open word on the other provider.
+   *
+   * The provider is a stored preference, so switching it first is what makes
+   * the retry land on the other source; `force` skips the cache, which would
+   * otherwise hand back the failure for the same key.
+   */
+  const switchDictionary = async (provider) => {
+    if (dictionary.busy || dictionary.word === null) return;
+    setDictionary((previous) => ({ ...previous, busy: true, error: null }));
+    try {
+      await call('savePluginSettings', { dictionary: provider });
+      const result = await call('lookupWord', { word: dictionary.word, force: true });
+      setDictionary({ word: dictionary.word, provider, result, error: null, busy: false });
+    } catch (error) {
+      setDictionary((previous) => ({ ...previous, busy: false, error }));
     }
   };
   const startAnalysis = async () => {
@@ -552,6 +646,12 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
       failedCount: sentences.filter((item) => item.analysisStatus === 'failed').length,
     }),
 
+    // Only say how to look up a word once a sentence is actually selected; the
+    // hint would otherwise float over a body the learner is only reading.
+    active >= 0 && sentences.length > 0
+      ? h('div', { className: 'er-dict-hint' }, t('reader.dictHint'))
+      : null,
+
     h('div', { className: 'er-reader er-reader--fill' },
       h('section', { className: 'er-cell er-article-card' },
         h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 12 } },
@@ -583,6 +683,7 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
             ? h(Empty, { icon: h(Icons.bookOpen, null), title: t('reader.emptyBody'), description: t('reader.emptyBodyHint') })
             : h(ArticleBody, {
               detail: data, words, activeIndex: active, onSelect: setActive, onWord: setDrawerWord,
+              onDictionary: openDictionary,
             }))),
       mode === 'split'
         ? h('aside', { className: 'er-side' },
@@ -651,6 +752,24 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge }) {
         t, word: drawerWord,
         onFavorite: (id, value) => updateWord(id, { favorite: value }),
         onMastery: (id, value) => updateWord(id, { masteryLevel: value }),
+      }))
+      : null,
+
+    // The selected sentence's words answer with the dictionary, not the
+    // article's own card. Clicking the scrim closes it, as with every dialog.
+    dictionary.word
+      ? h(Dialog, {
+        title: dictionary.busy
+          ? t('reader.dictLoading')
+          : `${dictionary.word} · ${t('reader.dictionaryTitle')}`,
+        onClose: closeDictionary,
+      }, h(DictionaryCard, {
+        t,
+        word: dictionary.word,
+        result: dictionary.result,
+        error: dictionary.error,
+        busy: dictionary.busy,
+        onSwitch: switchDictionary,
       }))
       : null,
 

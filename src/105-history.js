@@ -160,7 +160,7 @@ const FEED_PAGE = 40;
  * The events arrive newest first and paged; the caller appends each page. When
  * the reader reaches the bottom, `onLoadMore` fetches the next one.
  */
-function ActivityFeed({ t, events, hasMore, loading }) {
+function ActivityFeed({ t, events, hasMore, loading, onOpenArticle }) {
   const byDay = new Map();
   for (const event of events ?? []) {
     if (!byDay.has(event.day)) byDay.set(event.day, []);
@@ -180,6 +180,7 @@ function ActivityFeed({ t, events, hasMore, loading }) {
             articleId: event.articleId,
             title: event.title ?? t('history.unknownArticle'),
             cefrLevel: event.cefrLevel ?? null,
+            sentenceIndex: event.sentenceIndex ?? null,
             kinds: new Set(),
             seconds: 0,
             events: 0,
@@ -189,6 +190,11 @@ function ActivityFeed({ t, events, hasMore, loading }) {
         entry.seconds += event.seconds;
         entry.events += 1;
         if (event.kind) entry.kinds.add(event.kind);
+        // Events for one article share the article's reading progress, but a
+        // later event may have one where an earlier one did not.
+        if (entry.sentenceIndex === null && event.sentenceIndex !== null) {
+          entry.sentenceIndex = event.sentenceIndex;
+        }
       }
       return { day, seconds, articles: [...perArticle.values()].sort((a, b) => b.seconds - a.seconds) };
     });
@@ -210,20 +216,30 @@ function ActivityFeed({ t, events, hasMore, loading }) {
     h('span', { className: 'er-card-sub' }, `${section.articles.length} ${t('history.articles')}`),
     h('div', { className: 'er-topbar-spacer' }),
     h(Badge, { tone: section.seconds >= 600 ? 'mint' : 'soft' }, duration(t, section.seconds))),
-  section.articles.map((article) => h('div', {
-    key: `${section.day}-${article.articleId ?? 'none'}`,
-    className: 'er-feed-row',
-  },
-  h('div', { className: 'er-feed-icon' }, h(Icons.bookOpen, null)),
-  h('div', { className: 'er-feed-body' },
-    h('div', { className: 'er-feed-title' }, article.title),
-    h('div', { className: 'er-feed-meta' },
-      article.cefrLevel ? h(Badge, { tone: cefrTone(article.cefrLevel) }, article.cefrLevel) : null,
-      [...article.kinds].map((kind) => h('span', { key: kind },
-        t(`history.kind.${kind}`, { fallback: kind }))),
-      h('span', { className: 'er-crumb-dot' }),
-      h('span', null, `${article.events} ${t('history.events')}`))),
-  h('div', { className: 'er-feed-time' }, duration(t, article.seconds))))));
+  section.articles.map((article) => {
+    // A row that belongs to an article opens it, scrolled to where the learner
+    // stopped; one with no article (a removed one) is not clickable.
+    const jump = article.articleId
+      ? () => onOpenArticle?.(article.articleId, article.sentenceIndex ?? undefined)
+      : null;
+    return h(jump === null ? 'div' : 'button', {
+      key: `${section.day}-${article.articleId ?? 'none'}`,
+      type: jump === null ? undefined : 'button',
+      className: jump === null ? 'er-feed-row' : 'er-feed-row er-feed-row--link',
+      'aria-label': jump === null ? undefined : `${article.title} ${t('history.openArticle')}`,
+      onClick: jump,
+    },
+    h('div', { className: 'er-feed-icon' }, h(Icons.bookOpen, null)),
+    h('div', { className: 'er-feed-body' },
+      h('div', { className: 'er-feed-title' }, article.title),
+      h('div', { className: 'er-feed-meta' },
+        article.cefrLevel ? h(Badge, { tone: cefrTone(article.cefrLevel) }, article.cefrLevel) : null,
+        [...article.kinds].map((kind) => h('span', { key: kind },
+          t(`history.kind.${kind}`, { fallback: kind }))),
+        h('span', { className: 'er-crumb-dot' }),
+        h('span', null, `${article.events} ${t('history.events')}`))),
+    h('div', { className: 'er-feed-time' }, duration(t, article.seconds)));
+  })))
 
   // No button: the feed loads when the reader reaches the bottom, so the
   // only affordance is a line that says what is happening. Showing a button
@@ -276,13 +292,19 @@ function StudyHeatmapCard({ t, activity, actions, onPickDay, selectedDay }) {
 }
 
 /** Study history page: totals, the grid, and the day-by-day feed. */
-function StudyHistoryPage({ t, notify }) {
+function StudyHistoryPage({ t, notify, onOpenArticle, initialDay, onDayChange }) {
   const data = useLoad(
     () => call('studyActivity', { days: HISTORY_WEEKS * 7 }),
     [],
   );
-  // Which day the heatmap clicked. null means every day, newest first.
-  const [selectedDay, setSelectedDay] = React.useState(null);
+  // Which day the heatmap clicked. null means every day, newest first. The day
+  // lives in the route so switching away and coming back restores the filter.
+  const [selectedDay, setSelectedDay] = React.useState(initialDay ?? null);
+  // A day filter restored from the route arrives after mount; follow it once.
+  React.useEffect(() => {
+    if (initialDay === undefined) return;
+    setSelectedDay((current) => (current === initialDay ? current : initialDay));
+  }, [initialDay]);
   // The feed is paged and appended, so the reader never re-fetches what is
   // already on screen.
   const [feedEvents, setFeedEvents] = React.useState([]);
@@ -325,8 +347,13 @@ function StudyHistoryPage({ t, notify }) {
     if (remaining < 160) loadFeed(feedOffset.current + FEED_PAGE, false);
   }, [loadFeed]);
 
-  // Clicking the selected day again clears the filter.
-  const pickDay = (day) => setSelectedDay((current) => (current === day ? null : day));
+  // Clicking the selected day again clears the filter. The route is told too,
+  // so the filter survives a navigation away and back.
+  const pickDay = (day) => {
+    const next = selectedDay === day ? null : day;
+    setSelectedDay(next);
+    onDayChange?.(next);
+  };
 
   if (data.status === 'loading' && !data.data) {
     return h('div', { className: 'er-page' },
@@ -351,7 +378,7 @@ function StudyHistoryPage({ t, notify }) {
         ? h(Button, {
           size: 'sm', variant: 'ghost',
           title: t('history.clearDay'),
-          onClick: () => setSelectedDay(null),
+          onClick: () => { setSelectedDay(null); onDayChange?.(null); },
         }, `${t('history.onlyDay')} ${selectedDay}`)
         : null,
       h('span', { className: 'er-card-sub' }, `${activity.startDay} → ${activity.endDay ?? activity.today}`)),
@@ -391,6 +418,7 @@ function StudyHistoryPage({ t, notify }) {
         events: feedEvents,
         hasMore: feedHasMore,
         loading: feedLoading,
+        onOpenArticle,
       }))));
 }
 

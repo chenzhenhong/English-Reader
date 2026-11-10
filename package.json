@@ -1,6 +1,6 @@
 {
   "name": "english-reader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI English reading studio: discover or import articles, get evidence-backed sentence-level analysis, and grow a personal knowledge base.",
   "type": "module",
   "exports": {

@@ -28,7 +28,7 @@ const pieces = order.map((name) => `// ---- src/${name} ----\n${stripExports(rea
 const debugExports = readdirSync(join(root, '..'))
   .filter((name) => name === '.debug-exports')
   .length > 0
-  ? '/** Test-only exports; enabled by an empty .debug-exports marker file. */\nconst __debugExports = { speakText, speakSentence, stopSpeech, speechPrefs, saveSpeechPrefs, EnglishReaderApp, Dashboard, Discover, Articles, ArticleDetail, KnowledgePage, KnowledgeDetail, ReviewPage, SettingsPage, wordIndex, paragraphBlocks, SentenceFailure, SentencePane, ArticleBody, WordCard, stageCounter, AnalysisProgress, Board, Cell, SPANS, StudyHistoryPage, buildWeeks, dayKey, duration, ActivityFeed, Band, isAnalysisRunning };\n'
+  ? '/** Test-only exports; enabled by an empty .debug-exports marker file. */\nconst __debugExports = { speakText, speakSentence, stopSpeech, speechPrefs, saveSpeechPrefs, EnglishReaderApp, Dashboard, Discover, Articles, ArticleDetail, KnowledgePage, KnowledgeDetail, KnowledgeCard, ReviewPage, SettingsPage, wordIndex, paragraphBlocks, SentenceFailure, SentencePane, ArticleBody, WordCard, SentenceText, DictionaryCard, stageCounter, AnalysisProgress, StageDetailDialog, Board, Cell, SPANS, StudyHistoryPage, buildWeeks, dayKey, duration, ActivityFeed, Band, isAnalysisRunning };\n'
   : '';
 
 const registration = `

@@ -95,7 +95,7 @@ function saveRoute(route) {
 function EnglishReaderApp({ t }) {
   const [route, setRoute] = React.useState(() => readSavedRoute() ?? {
     page: 'home', articleId: null, kind: 'words', detailId: null, search: undefined,
-    discoverTab: 'spec', discoverMode: 'auto',
+    discoverTab: 'spec', discoverMode: 'auto', historyDay: null, sections: {},
   });
   const [toast, setToast] = React.useState(null);
   const notify = React.useCallback((message, tone = 'ok') => {
@@ -113,21 +113,62 @@ function EnglishReaderApp({ t }) {
   React.useEffect(() => {
     saveRoute(route);
   }, [route]);
-  const openArticle = (articleId) => setRoute({ page: 'article', articleId, kind: 'words', detailId: null });
-  const openKnowledge = (kind, detailId) => setRoute({
-    page: 'knowledge',
-    kind: kind === 'word' ? 'words' : `${kind}s`,
-    detailId,
-    articleId: null,
+  const [jump, setJump] = React.useState(null);
+  /**
+   * Remember the view a section was left on.
+   *
+   * A section can hold a second-level page: a word's detail, an article, or a
+   * day's filter. The rail always returns to the section, so the view it was
+   * left on has to be remembered; without it, switching away and coming back
+   * resets the section to its list.
+   */
+  const remember = (id, view) => setRoute((current) => ({
+    ...current,
+    ...view,
+    sections: { ...(current.sections ?? {}), [id]: { ...view } },
+  }));
+  /** Leave a section on its list, so coming back starts there. */
+  const leave = (id) => setRoute((current) => {
+    const sections = { ...(current.sections ?? {}) };
+    delete sections[id];
+    return { ...current, sections };
   });
+  const openArticle = (articleId, sentenceIndex) => {
+    remember('articles', { page: 'article', articleId, kind: 'words', detailId: null });
+    // The jump target lives outside the route: the route is persisted, so a
+    // jump must not be remembered the next time the article is opened normally.
+    setJump(sentenceIndex === undefined ? null : { articleId, sentenceIndex });
+  };
+  const openKnowledge = (kind, detailId) => {
+    const sectionId = kind === 'word' ? 'words' : `${kind}s`;
+    remember(sectionId, { page: 'knowledge', kind: sectionId, detailId, articleId: null });
+  };
+  /** The rail item for each section's list, used when nothing was remembered. */
+  const sectionHome = {
+    home: { page: 'home' },
+    discover: { page: 'discover' },
+    articles: { page: 'articles' },
+    review: { page: 'review' },
+    history: { page: 'history' },
+    settings: { page: 'settings' },
+    words: { page: 'knowledge', kind: 'words', detailId: null },
+    phrases: { page: 'knowledge', kind: 'phrases', detailId: null },
+    collocations: { page: 'knowledge', kind: 'collocations', detailId: null },
+    sentences: { page: 'knowledge', kind: 'sentences', detailId: null },
+  };
   const navigateByNav = (id) => {
-    if (id === 'home') go('home');
-    else if (id === 'discover') go('discover');
-    else if (id === 'articles') go('articles');
-    else if (id === 'review') go('review');
-    else if (id === 'history') go('history');
-    else if (id === 'settings') go('settings');
-    else go('knowledge', { kind: id, detailId: null });
+    setRoute((current) => {
+      const remembered = current.sections?.[id];
+      const target = remembered ?? sectionHome[id];
+      if (target === undefined) return current;
+      return {
+        ...current,
+        ...target,
+        articleId: target.articleId ?? null,
+        detailId: target.detailId ?? null,
+        kind: target.kind ?? current.kind,
+      };
+    });
   };
   const activeNav = route.page === 'knowledge'
     ? route.kind
@@ -153,13 +194,18 @@ function EnglishReaderApp({ t }) {
       ? h(Empty, { icon: h(Icons.bookOpen, null), title: t('articles.emptyTitle'), description: t('articles.emptyBody') })
       : h(ArticleDetail, {
         t, articleId: route.articleId, notify,
-        onBack: () => go('articles'),
+        sentenceIndex: jump !== null && jump.articleId === route.articleId ? jump.sentenceIndex : undefined,
+        onBack: () => { leave('articles'); go('articles'); },
         onNavigateKnowledge: openKnowledge,
       });
   } else if (route.page === 'review') {
     page = h(ReviewPage, { t, notify });
   } else if (route.page === 'history') {
-    page = h(StudyHistoryPage, { t, notify });
+    page = h(StudyHistoryPage, {
+      t, notify, onOpenArticle: openArticle,
+      initialDay: route.historyDay,
+      onDayChange: (day) => go('history', { historyDay: day }),
+    });
   } else if (route.page === 'settings') {
     page = h(SettingsPage, { t, notify });
   } else if (route.page === 'knowledge') {
@@ -167,9 +213,10 @@ function EnglishReaderApp({ t }) {
     page = route.detailId
       ? h(KnowledgeDetail, {
         t, kind, entityId: route.detailId, notify,
-        onBack: () => go('knowledge', { detailId: null }),
+        onBack: () => { leave(route.kind); go('knowledge', { detailId: null }); },
+        onOpenArticle: openArticle,
       })
-      : h(KnowledgePage, { t, kind, notify });
+      : h(KnowledgePage, { t, kind, notify, onOpenArticle: openArticle, onOpenDetail: openKnowledge });
   }
 
   const groups = NAV_GROUPS.map((group, groupIndex) => h('div', { key: group.id },
