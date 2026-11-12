@@ -2,9 +2,10 @@
  * Dictionary popup for one looked-up word.
  *
  * The card is intentionally the same shape as the knowledge `WordCard`, but it
- * renders whatever the scraped provider returned. Nothing here is persisted:
- * the learner reads the entry and closes the dialog, and the source stays a
- * page that the Host scraped rather than a library record.
+ * renders whatever the scraped provider returned. The lookup itself is
+ * transient — the learner reads the entry and closes the dialog — but the
+ * popup's footer offers an explicit "add to word library" control, which is
+ * the only way a provider-minted word reaches the library.
  *
  * Pronunciation comes from the provider's own audio, never from the TTS
  * bridge: the learner hears the same voice the dictionary page uses.
@@ -62,6 +63,63 @@ function PhoneticAudio({ audio, label, failedLabel }) {
     title: failed ? failedLabel : label,
     onClick: run,
   }, h(Icons.speaker, null));
+}
+
+/**
+ * Add-to-library control for the dictionary popup.
+ *
+ * A scraped lookup is the one surface that can mint a library word straight
+ * from the provider, so this control is the learner's explicit opt-in: a word
+ * joins the library only after they press it. It doubles as the removal
+ * control, so a saved word reads "已在单词库" instead of silently doing nothing.
+ *
+ * @param {object} props
+ * @param {(key: string, vars?: object) => string} props.t localised labels.
+ * @param {boolean|null|undefined} props.inLibrary whether the word is saved;
+ *   null/undefined while the lookup is still in flight.
+ * @param {boolean} props.saving whether the save request is running.
+ * @param {(next: boolean) => void} [props.onToggle] flips membership.
+ */
+function DictionaryLibraryFooter({ t, inLibrary, saving, onToggle }) {
+  if (inLibrary === undefined || inLibrary === null) return null;
+  const saved = inLibrary === true;
+  return h(Button, {
+    size: 'sm',
+    variant: saved ? 'ghost' : 'primary',
+    icon: saved ? h(Icons.check, null) : h(Icons.plus, null),
+    disabled: saving === true,
+    onClick: () => onToggle?.(!saved),
+  }, saved ? t('reader.inWordLibrary') : t('reader.addToWordLibrary'));
+}
+
+/**
+ * The dictionary popup: one Dialog carrying the entry card and its footer.
+ *
+ * Both surfaces that can look a word up — the reader's selected sentence and a
+ * knowledge detail's synonym — share it, so the "add to word library" control
+ * is written once and always lands in the popup's bottom-right footer.
+ *
+ * @param {object} props
+ * @param {(key: string, vars?: object) => string} props.t localised labels.
+ * @param {string} props.word the looked-up surface form.
+ * @param {object|null} props.result the scraped entry, with `inLibrary`.
+ * @param {object|null} props.error the failure, if the lookup was refused.
+ * @param {boolean} props.busy whether the lookup is still in flight.
+ * @param {() => void} props.onClose closes the popup.
+ * @param {(provider: string) => void} [props.onSwitch] retries on the other source.
+ * @param {(next: boolean) => void} [props.onAddToLibrary] saves/removes the word.
+ * @param {boolean} props.saving whether the save request is running.
+ */
+function DictionaryPopup({ t, word, result, error, busy, onClose, onSwitch, onAddToLibrary, saving }) {
+  return h(Dialog, {
+    title: busy
+      ? t('reader.dictLoading')
+      : `${word} · ${t('reader.dictionaryTitle')}`,
+    onClose,
+    footer: h(DictionaryLibraryFooter, {
+      t, inLibrary: result?.inLibrary, saving, onToggle: onAddToLibrary,
+    }),
+  }, h(DictionaryCard, { t, word, result, error, busy, onSwitch }));
 }
 
 /** Dictionary entry body, rendered inside the reader's Dialog. */
@@ -125,4 +183,4 @@ function DictionaryCard({ t, word, result, error, busy, onSwitch }) {
       : null);
 }
 
-export { DictionaryCard, PhoneticAudio };
+export { DictionaryCard, DictionaryPopup, DictionaryLibraryFooter, PhoneticAudio };

@@ -135,5 +135,58 @@ console.log('\nfacade preference and cache');
   check('a miss surfaces as a coded error', true);
 }
 
+console.log('\ndictionary words join the library');
+{
+  const dir = join(tmpdir(), `er-dict-library-${Date.now()}`);
+  const web = {
+    fetch: async () => ({ body: { content: fixture('dictionary-youdao.html') } }),
+  };
+  const facade = createFacade({ dataDir: dir, web, logger: { warn() {}, info() {} } });
+  const result = await facade.lookupWord('habit');
+
+  check('the lookup reports the library is empty',
+    result.entityId === null && result.inLibrary === false,
+    JSON.stringify({ entityId: result.entityId, inLibrary: result.inLibrary }));
+
+  const saved = facade.saveDictionaryWord({ word: 'habit', result, favorite: true });
+  check('saving returns the new entity id',
+    typeof saved.entityId === 'string' && saved.entityId.length > 0, JSON.stringify(saved));
+  check('saving reports the word is in the library', saved.inLibrary === true);
+  check('saving keeps the headword', saved.expression === 'habit', saved.expression);
+
+  const listed = facade.searchKnowledge({ kind: 'word', limit: 200 });
+  check('the saved word joins the library',
+    listed.length === 1 && listed[0].expression === 'habit', JSON.stringify(listed));
+
+  const after = await facade.lookupWord('habit');
+  check('a later lookup sees the word in the library',
+    after.inLibrary === true && after.entityId === saved.entityId,
+    JSON.stringify({ inLibrary: after.inLibrary, entityId: after.entityId }));
+
+  const detail = facade.knowledgeDetail('word', saved.entityId);
+  check('the library word keeps the scraped definitions',
+    (detail.meanings ?? []).length >= 1 && /习惯/.test(detail.meanings[0].meaning), JSON.stringify(detail.meanings));
+  check('the library word keeps the scraped part of speech',
+    (detail.partOfSpeech ?? []).includes('n.'), JSON.stringify(detail.partOfSpeech));
+
+  // Saving again must not replace an entry that already exists, whether it came
+  // from the provider or from an analysed article: the learner's own context
+  // meaning is the one that belongs in the library.
+  const redecorated = { ...result, definitions: [{ pos: 'adj.', text: '被替换的释义' }] };
+  const again = facade.saveDictionaryWord({ word: 'habit', result: redecorated, favorite: true });
+  check('a repeat save keeps the word in the library', again.inLibrary === true);
+  const kept = facade.knowledgeDetail('word', saved.entityId);
+  check('a repeat save does not overwrite the scraped definitions',
+    /习惯/.test(kept.meanings?.[0]?.meaning ?? ''), JSON.stringify(kept.meanings));
+
+  const removed = facade.saveDictionaryWord({ word: 'habit', result, favorite: false });
+  check('removing reports the word is out of the library',
+    removed.inLibrary === false && removed.entityId === saved.entityId);
+  check('the word leaves the library', facade.searchKnowledge({ kind: 'word', limit: 200 }).length === 0);
+
+  check('saving rejects a non-word',
+    (await throws(() => facade.saveDictionaryWord({ word: 'two words' }), 'x')) instanceof ReaderError);
+}
+
 console.log(failed > 0 ? `${failed} failed, ${passed} passed` : `${passed} passed, 0 failed`);
 process.exitCode = failed > 0 ? 1 : 0;

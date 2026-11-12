@@ -823,6 +823,12 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('ArticleBody accepts the dictionary handler', /function ArticleBody\(\{[^}]*onDictionary/.test(source));
   check('the detail page forwards it to the body', /onDictionary: openDictionary/.test(
     readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8')));
+  // The reader's popup wires the library control through the same handler the
+  // article's own word cards use, so the control is not a second opt-in path.
+  const detailSource = readFileSync(new URL('../src/90-detail.js', import.meta.url), 'utf8');
+  check('the reader opens the shared dictionary popup', detailSource.includes('h(DictionaryPopup, {'));
+  check('the reader wires the popup to the library handler', /onAddToLibrary: saveDictionaryWord/.test(detailSource));
+  check('the reader handler calls the save operation', detailSource.includes("call('saveDictionaryWord'"));
 }
 
 // The dictionary popup renders whatever the scraped provider returned, and
@@ -867,6 +873,45 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
   check('the facade stores the provider', /setPluginSetting\('dictionary'/.test(facadeSource));
   check('the settings page persists the selection', /dictionary: next\.dictionary/.test(
     readFileSync(new URL('../src/100-knowledge.js', import.meta.url), 'utf8')));
+}
+
+// The popup carries an explicit add-to-library control, because a scraped
+// lookup is the one surface that can mint a library word straight from the
+// provider.
+{
+  const popup = async (props) => mount(React.createElement(P.DictionaryPopup, {
+    t, word: 'habit', error: null, busy: false, onClose: noop, onSwitch: noop, ...props,
+  }));
+  const notSaved = await popup({ result: { provider: 'youdao', definitions: [], inLibrary: false }, onAddToLibrary: noop });
+  check('the popup offers add-to-word-library',
+    JSON.stringify(notSaved).includes('reader.addToWordLibrary'));
+
+  const saved = await popup({ result: { provider: 'youdao', definitions: [], inLibrary: true }, onAddToLibrary: noop });
+  check('a saved word reads as already in the library',
+    JSON.stringify(saved).includes('reader.inWordLibrary'));
+
+  const busy = await popup({ result: null, onAddToLibrary: noop });
+  check('a lookup still in flight offers no library control',
+    !JSON.stringify(busy).includes('reader.addToWordLibrary')
+    && !JSON.stringify(busy).includes('reader.inWordLibrary'));
+
+  let toggled = null;
+  const clicked = await popup({
+    result: { provider: 'youdao', definitions: [], inLibrary: false },
+    onAddToLibrary: (next) => { toggled = next; },
+  });
+  const button = clicked.find((node) => node.type === 'button'
+    && JSON.stringify(node).includes('reader.addToWordLibrary'));
+  button?.props?.onClick?.();
+  check('pressing the control asks to add', toggled === true, String(toggled));
+
+  const saving = await popup({
+    result: { provider: 'youdao', definitions: [], inLibrary: false },
+    saving: true, onAddToLibrary: noop,
+  });
+  const disabled = saving.find((node) => node.type === 'button'
+    && JSON.stringify(node).includes('reader.addToWordLibrary'));
+  check('a save in flight disables the control', disabled?.props?.disabled === true);
 }
 
 // The dashboard must not duplicate navigation the rail already provides, and
@@ -1503,6 +1548,12 @@ check('the sentences tab is gone', !tabIds.includes('sentences'));
     looking.some((n) => String(n.props?.className ?? '').includes('er-modal')));
   check('the popup names the looked-up word',
     looking.some((n) => JSON.stringify(n).includes('strengthen')));
+  // The synonym popup is the same component the reader uses, so it offers the
+  // library control and calls the same save operation.
+  const knowledgeSource = readFileSync(new URL('../src/100-knowledge.js', import.meta.url), 'utf8');
+  check('the knowledge popup is the shared one', knowledgeSource.includes('h(DictionaryPopup, {'));
+  check('the knowledge popup wires the library handler', knowledgeSource.includes('onAddToLibrary: saveDictionaryWord'));
+  check('the knowledge handler calls the save operation', knowledgeSource.includes("call('saveDictionaryWord'"));
 }
 
 // A source context that resolves to a sentence is a link to it.

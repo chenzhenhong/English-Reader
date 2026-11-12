@@ -350,6 +350,10 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge, sent
   // provider it was queried with, what came back, and whether a request is in
   // flight. Nothing is persisted; closing the dialog forgets it.
   const [dictionary, setDictionary] = React.useState({ word: null, provider: null, result: null, error: null, busy: false });
+  // Whether the open word's save-to-library request is in flight, so the
+  // popup's footer button can be disabled without sharing the page's action
+  // pending state.
+  const [dictionarySaving, setDictionarySaving] = React.useState(false);
   const action = useAction();
   const words = React.useMemo(() => (detail.data ? wordIndex(detail.data) : new Map()), [detail.data]);
   const sentences = detail.data?.sentences ?? [];
@@ -489,6 +493,36 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge, sent
       setDictionary({ word: dictionary.word, provider, result, error: null, busy: false });
     } catch (error) {
       setDictionary((previous) => ({ ...previous, busy: false, error }));
+    }
+  };
+  /**
+   * Save the open word into the learner's library.
+   *
+   * The lookup payload already carries the provider's definitions, so saving
+   * mints a vocabulary row from them; a word the article already analysed keeps
+   * its analysed meaning and only gains membership.
+   */
+  const saveDictionaryWord = async (next) => {
+    if (dictionarySaving || dictionary.word === null) return;
+    setDictionarySaving(true);
+    try {
+      const saved = await call('saveDictionaryWord', {
+        word: dictionary.word,
+        result: dictionary.result,
+        favorite: next,
+      });
+      if (saved) {
+        setDictionary((previous) => ({
+          ...previous,
+          result: previous.result ? { ...previous.result, inLibrary: saved.inLibrary } : previous.result,
+        }));
+        notify(next ? t('reader.addedToWordLibrary') : t('reader.removedFromWordLibrary'), 'ok');
+        if (next) detail.reload();
+      }
+    } catch (error) {
+      notify(error?.message ?? t('reader.dictSaveFailed'), 'error');
+    } finally {
+      setDictionarySaving(false);
     }
   };
   const startAnalysis = async () => {
@@ -758,19 +792,17 @@ function ArticleDetail({ t, articleId, notify, onBack, onNavigateKnowledge, sent
     // The selected sentence's words answer with the dictionary, not the
     // article's own card. Clicking the scrim closes it, as with every dialog.
     dictionary.word
-      ? h(Dialog, {
-        title: dictionary.busy
-          ? t('reader.dictLoading')
-          : `${dictionary.word} · ${t('reader.dictionaryTitle')}`,
-        onClose: closeDictionary,
-      }, h(DictionaryCard, {
+      ? h(DictionaryPopup, {
         t,
         word: dictionary.word,
         result: dictionary.result,
         error: dictionary.error,
         busy: dictionary.busy,
+        onClose: closeDictionary,
         onSwitch: switchDictionary,
-      }))
+        onAddToLibrary: saveDictionaryWord,
+        saving: dictionarySaving,
+      })
       : null,
 
     action.error ? h(Alert, null, action.error.message) : null);

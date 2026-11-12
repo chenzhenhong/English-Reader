@@ -85,6 +85,8 @@ function KnowledgeDetail({ t, kind, entityId, onBack, onOpenArticle, notify }) {
   // A synonym opens the same dictionary popup the article body uses, so the
   // learner reads one source rather than a second, provider-less card.
   const [dictionary, setDictionary] = React.useState({ word: null, provider: null, result: null, error: null, busy: false });
+  // Whether the open word's save-to-library request is in flight.
+  const [dictionarySaving, setDictionarySaving] = React.useState(false);
   const openDictionary = async (surface) => {
     if (surface.length === 0 || dictionary.busy) return;
     setDictionary({ word: surface, provider: null, result: null, error: null, busy: true });
@@ -107,6 +109,35 @@ function KnowledgeDetail({ t, kind, entityId, onBack, onOpenArticle, notify }) {
       setDictionary({ word: dictionary.word, provider, result, error: null, busy: false });
     } catch (error) {
       setDictionary((previous) => ({ ...previous, busy: false, error }));
+    }
+  };
+  /**
+   * Save the open word into the learner's library.
+   *
+   * The lookup payload already carries the provider's definitions, so saving
+   * mints a vocabulary row from them; a word the article already analysed keeps
+   * its analysed meaning and only gains membership.
+   */
+  const saveDictionaryWord = async (next) => {
+    if (dictionarySaving || dictionary.word === null) return;
+    setDictionarySaving(true);
+    try {
+      const saved = await call('saveDictionaryWord', {
+        word: dictionary.word,
+        result: dictionary.result,
+        favorite: next,
+      });
+      if (saved) {
+        setDictionary((previous) => ({
+          ...previous,
+          result: previous.result ? { ...previous.result, inLibrary: saved.inLibrary } : previous.result,
+        }));
+        notify(next ? t('reader.addedToWordLibrary') : t('reader.removedFromWordLibrary'), 'ok');
+      }
+    } catch (error) {
+      notify(error?.message ?? t('reader.dictSaveFailed'), 'error');
+    } finally {
+      setDictionarySaving(false);
     }
   };
 
@@ -236,19 +267,17 @@ function KnowledgeDetail({ t, kind, entityId, onBack, onOpenArticle, notify }) {
     // A synonym opens the dictionary the same way a word in the article body
     // does; clicking the scrim closes it, as with every dialog.
     dictionary.word
-      ? h(Dialog, {
-        title: dictionary.busy
-          ? t('reader.dictLoading')
-          : `${dictionary.word} · ${t('reader.dictionaryTitle')}`,
-        onClose: closeDictionary,
-      }, h(DictionaryCard, {
+      ? h(DictionaryPopup, {
         t,
         word: dictionary.word,
         result: dictionary.result,
         error: dictionary.error,
         busy: dictionary.busy,
+        onClose: closeDictionary,
         onSwitch: switchDictionary,
-      }))
+        onAddToLibrary: saveDictionaryWord,
+        saving: dictionarySaving,
+      })
       : null,
     action.error ? h(Alert, null, action.error.message) : null);
 }
